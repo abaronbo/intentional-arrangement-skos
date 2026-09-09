@@ -1554,6 +1554,33 @@ function mintLabelUri(cid, kind, used){ used=used||collectLabelUris();
 function ensureXlUris(){ if(!model.xlLabels) return false; const used=collectLabelUris(); let changed=false;
   for(const id in model.concepts){ const c=model.concepts[id]; for(const k of ["pref","alt","hidden"]){ (c[k]||[]).forEach(L=>{ if(L.val && !L.uri){ L.uri=mintLabelUri(id,k,used); changed=true; } }); } }
   return changed; }
+// Namespace change → rewrite every URI minted under the OLD base so the whole
+// workspace stays consistent. Concept URIs are computed as base+id and follow the
+// base automatically, but these are stored absolute and would otherwise go stale
+// (e.g. keep a leftover example.org after the user sets their real namespace):
+//  - SKOS-XL label URIs (L.uri) on pref/alt/hidden labels
+//  - the concept scheme URI, when it was the default derived from the old base
+//  - the agents/documents annex namespaces, when derived from the old base
+//  - any foreign concept URI that happens to sit under the old home base
+// Values outside the old base (imported foreign URIs, an explicit scheme URI) are
+// left untouched.
+function rebaseWorkspace(oldB, newB){
+  if(!oldB || !newB || oldB===newB) return 0;
+  let n=0;
+  for(const id in model.concepts){ const c=model.concepts[id];
+    for(const k of ["pref","alt","hidden"]) (c[k]||[]).forEach(L=>{
+      if(L.uri && L.uri.indexOf(oldB)===0){ L.uri=newB+L.uri.slice(oldB.length); n++; } });
+    if(c.uri && c.uri.indexOf(oldB)===0){ c.uri=newB+c.uri.slice(oldB.length); n++; }
+  }
+  const strip=u=>String(u||"").replace(/[#/]+$/,"");
+  if(model.scheme){
+    if(model.scheme.uri && (model.scheme.uri===strip(oldB) || model.scheme.uri.indexOf(oldB)===0)){
+      model.scheme.uri = model.scheme.uri===strip(oldB) ? strip(newB) : newB+model.scheme.uri.slice(oldB.length); n++; }
+    for(const nsKey of ["agentsBase","docsBase"]){
+      if(model.scheme[nsKey] && model.scheme[nsKey].indexOf(oldB)===0){ model.scheme[nsKey]=newB+model.scheme[nsKey].slice(oldB.length); n++; } }
+  }
+  return n;
+}
 // A readable PascalCase identifier from a label ("Month journal" -> "MonthJournal").
 function slugId(s){ const parts=String(s||"").trim().split(/[^A-Za-z0-9]+/).filter(Boolean); return parts.map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(""); }
 function uniqueLocalExcept(base, keepId){ base=base||"Concept"; let id=base, n=1; while(model.concepts[id] && id!==keepId) id=base+(++n); return id; }
@@ -2299,6 +2326,15 @@ function renderScheme(){
     if(key==="modified") el.id="fldModified";
     el.value=getv();
     el.oninput=()=>{ let v=el.value; if(key==="base"){ model.base=v; } else if(key==="prefix"){ const s=v.replace(/[^A-Za-z0-9_-]/g,""); if(s!==v){ el.value=s; } model.prefix=s; } else if(key==="defaultLang"){ model.defaultLang=v.trim(); model.scheme.lang=v.trim(); } else model.scheme[key]=v; if(key!=="modified") touchModified(); save(); if(selected) $('#editor .uri')&&($('#editor .uri').textContent=Core.conceptUri(model,selected)); };
+    if(key==="base"){
+      // capture the base before editing so a committed change can rebase every
+      // dependent URI (XL labels, scheme URI, annex namespaces) for consistency
+      el.onfocus=()=>{ el._oldBase=model.base; };
+      el.onchange=()=>{ const oldB=el._oldBase, newB=model.base;
+        if(oldB && newB && oldB!==newB){ const n=rebaseWorkspace(oldB,newB);
+          save(); renderTree(); if(selected) renderEditor();
+          if(n) toast("Namespace changed — rebased "+n+" dependent URI"+(n===1?"":"s")+" to the new base"); } };
+    }
     if(key==="license") attachUriGuard(el, v=>{ model.scheme.license=v; save(); });
     f.appendChild(el); g.appendChild(f);
   }
@@ -3007,6 +3043,7 @@ const CHECK_DOC={
   deprecatedTop:"A deprecated concept should not remain a top concept / scheme entry point.",
   danglingReplacedBy:"dcterms:isReplacedBy points to a concept that does not exist.",
   deprecatedNoSuccessor:"A deprecated concept with narrower concepts should record a successor (dcterms:isReplacedBy) so consumers can migrate.",
+  placeholderNamespace:"The scheme still uses the reserved example.org placeholder base — set your own namespace before publishing.",
 };
 // #61: the validation report as a downloadable Markdown work list — checkbox
 // items grouped by severity and check, so fixes can be worked through without

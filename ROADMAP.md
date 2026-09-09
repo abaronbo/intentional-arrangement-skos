@@ -8,6 +8,15 @@ Legend: ✅ Shipped · 🚧 In progress · 🔜 Next · 💡 Planned
 
 ## ✅ Recently shipped
 
+### Namespace changes rebase every dependent URI (v0.18.3)
+- Changing the concept scheme's **base namespace** (Build → Concept scheme settings) now rewrites every URI that was minted under the old base, so nothing is left behind — most importantly the stored **SKOS-XL label URIs**, which previously kept the old base (e.g. a leftover `example.org` after you set your real namespace) while concept URIs moved. The concept scheme URI and the agents/documents annex namespaces are rebased too; imported foreign URIs and an explicitly-set scheme URI are left untouched. After a field report of `example.org` leaking into published SKOS-XL output.
+
+### Consistent language tags, deprecation, and a consumer change log (v0.18.0–v0.18.2)
+- **Concept lifecycle** — mark a concept `owl:deprecated` and point it at its successor(s) with `dcterms:isReplacedBy`; retired concepts keep their URIs and stay in the scheme. New lint checks flag a deprecated top concept, a dangling successor, or a deprecation with no successor.
+- **Change-log export** — Export tab → *Change log* rolls the recorded edit history into a consumer-facing `CHANGELOG.md` (Keep a Changelog style).
+- **Language tags on all notes** — history-derived and imported change notes now inherit the scheme default language on export, matching manually-tagged notes (#71).
+- **Security hardening** — REST API no longer returns exception detail to clients; RDF/XML import rejects a DOCTYPE (entity-expansion guard); crosswalk/nav HTML sinks fully escape imported labels.
+
 ### Collections stamp their modifications (v0.17.3)
 - Editing a collection — its names, notes, type, or members — now stamps `dcterms:modified`, the same discipline concepts have had since v0.7. Collections predating v0.17.0 carry no dates and none are invented for them (the editor never fabricates provenance): they gain a `modified` stamp the first time they're actually edited, and `created` stays absent by design. Documented, after a field report showed the absence reads as a bug.
 
