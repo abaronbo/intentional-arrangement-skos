@@ -8,6 +8,9 @@ Legend: ✅ Shipped · 🚧 In progress · 🔜 Next · 💡 Planned
 
 ## ✅ Recently shipped
 
+### The concept editor never blanks on one bad field (v0.18.4)
+- A concept whose stored data had a malformed field (e.g. a legacy shape where an array was expected) made the editor throw while building the form, leaving only the URI heading visible and every other field missing. Each editor section now renders in isolation: a bad field shows a small inline notice naming it, and the rest of the form renders normally. After a field report on the software example.
+
 ### Namespace changes rebase every dependent URI (v0.18.3)
 - Changing the concept scheme's **base namespace** (Build → Concept scheme settings) now rewrites every URI that was minted under the old base, so nothing is left behind — most importantly the stored **SKOS-XL label URIs**, which previously kept the old base (e.g. a leftover `example.org` after you set your real namespace) while concept URIs moved. The concept scheme URI and the agents/documents annex namespaces are rebased too; imported foreign URIs and an explicitly-set scheme URI are left untouched. After a field report of `example.org` leaking into published SKOS-XL output.
 
