@@ -1013,6 +1013,14 @@ function validate(model){
   const ids = Object.keys(model.concepts);
   const C = model.concepts;
 
+  // Scheme-level: the reserved example.org/.com/.net domains (RFC 2606) must never
+  // appear in a published vocabulary — every concept URI would be non-dereferenceable
+  // and collide with everyone else's defaults. Set a real namespace before publishing.
+  const _nsCheck = (model.base || "") + " " + ((model.scheme && model.scheme.uri) || "");
+  if (/\bexample\.(org|com|net)\b/i.test(_nsCheck))
+    push("warning", "placeholderNamespace", "Placeholder namespace",
+      `The scheme still uses the reserved example.org placeholder base (${model.base}). Set your own namespace in Build → Concept scheme settings before publishing — every concept and label URI depends on it.`);
+
   // label index for ambiguity + overlap
   const prefIndex = new Map(); // "val@lang" -> [ids]
   for (const id of ids){
