@@ -2032,45 +2032,54 @@ function renderEditor(){
     host.appendChild(w);
   }
 
-  host.appendChild(labelGroup("Preferred labels", c, "pref", true));
-  host.appendChild(labelGroup("Alternative labels", c, "alt", false));
-  host.appendChild(labelGroup("Hidden labels", c, "hidden", false));
-  host.appendChild(labelGroup("Alternate name (rdfs:label)", c, "rdfsLabel", false));
-  host.appendChild(noteGroup("Comment (rdfs:comment)", c, "comment"));
-  host.appendChild(noteGroup("Definition", c, "definition"));
-  host.appendChild(noteGroup("Scope notes", c, "scopeNote"));
-  host.appendChild(noteGroup("Change notes", c, "changeNote"));
-  host.appendChild(noteGroup("History notes", c, "historyNote"));
-  host.appendChild(noteGroup("Editorial notes", c, "editorialNote"));
-  host.appendChild(noteGroup("Examples", c, "example"));
-  host.appendChild(relGroup("Broader (parents)", c, "broader"));
+  // Fault-tolerant section rendering: a malformed value in one field must never
+  // blank the whole editor. Previously an exception in any group aborted
+  // renderEditor, leaving only the URI heading visible; now each section is
+  // isolated — the rest render and the failing one shows an inline notice.
+  const safe=(label,build)=>{ try{ const el=build(); if(el) host.appendChild(el); }
+    catch(e){ try{ console.error("renderEditor: “"+label+"” failed",e); }catch(_){ }
+      const w=document.createElement("div"); w.className="grp";
+      w.style.cssText="font-size:12px;color:#b45309;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:6px 9px";
+      w.textContent="⚠ Couldn’t render “"+label+"” for this concept — its stored data may be malformed. The rest of the editor is unaffected; re-enter this field to repair it.";
+      host.appendChild(w); } };
+  safe("Preferred labels", ()=>labelGroup("Preferred labels", c, "pref", true));
+  safe("Alternative labels", ()=>labelGroup("Alternative labels", c, "alt", false));
+  safe("Hidden labels", ()=>labelGroup("Hidden labels", c, "hidden", false));
+  safe("Alternate name (rdfs:label)", ()=>labelGroup("Alternate name (rdfs:label)", c, "rdfsLabel", false));
+  safe("Comment (rdfs:comment)", ()=>noteGroup("Comment (rdfs:comment)", c, "comment"));
+  safe("Definition", ()=>noteGroup("Definition", c, "definition"));
+  safe("Scope notes", ()=>noteGroup("Scope notes", c, "scopeNote"));
+  safe("Change notes", ()=>noteGroup("Change notes", c, "changeNote"));
+  safe("History notes", ()=>noteGroup("History notes", c, "historyNote"));
+  safe("Editorial notes", ()=>noteGroup("Editorial notes", c, "editorialNote"));
+  safe("Examples", ()=>noteGroup("Examples", c, "example"));
+  safe("Broader (parents)", ()=>relGroup("Broader (parents)", c, "broader"));
   if(model.isothes){
-    host.appendChild(relGroup("Broader — generic (is-a)", c, "broaderGeneric"));
-    host.appendChild(relGroup("Broader — partitive (part of)", c, "broaderPartitive"));
-    host.appendChild(relGroup("Broader — instantial (instance of)", c, "broaderInstantial"));
+    safe("Broader — generic", ()=>relGroup("Broader — generic (is-a)", c, "broaderGeneric"));
+    safe("Broader — partitive", ()=>relGroup("Broader — partitive (part of)", c, "broaderPartitive"));
+    safe("Broader — instantial", ()=>relGroup("Broader — instantial (instance of)", c, "broaderInstantial"));
   }
-  host.appendChild(relGroup("Related", c, "related"));
-  host.appendChild(mapGroup(c));
-  host.appendChild(statusGroup(c));
-  if(c.deprecated) host.appendChild(relGroup("Replaced by — successor concepts (dcterms:isReplacedBy)", c, "isReplacedBy"));
+  safe("Related", ()=>relGroup("Related", c, "related"));
+  safe("External mappings", ()=>mapGroup(c));
+  safe("Lifecycle status", ()=>statusGroup(c));
+  if(c.deprecated) safe("Replaced by", ()=>relGroup("Replaced by — successor concepts (dcterms:isReplacedBy)", c, "isReplacedBy"));
   // collections this concept belongs to (#68) — the way back from Build to the
   // Collections editor; derived from the model, no extension property needed
-  { const _cs=(typeof colls==="function")?colls():(model.collections||{});
+  safe("Collections", ()=>{ const _cs=(typeof colls==="function")?colls():(model.collections||{});
     const _mine=Object.keys(_cs).filter(k=>((_cs[k].members)||[]).includes(selected));
-    if(_mine.length){
-      const g=groupShell("Collections ("+_mine.length+")", null);
-      const row=document.createElement("div"); row.style.cssText="display:flex;gap:6px;flex-wrap:wrap;padding:2px 0";
-      _mine.forEach(k=>{ const b=document.createElement("button"); b.className="btn sm";
-        b.textContent="● "+(collLabel(_cs[k])||k); b.title="Open this collection in the Collections editor";
-        b.onclick=()=>{ collSel=k; switchTab("collections"); renderCollections(); };
-        row.appendChild(b); });
-      g.appendChild(row); host.appendChild(g);
-    } }
-  host.appendChild(sourceGroup(c));
-  host.appendChild(metaGroup(c));
-  host.appendChild(artifactGroup(c));
-  host.appendChild(historyGroup(c));
-  updateSaveState();
+    if(!_mine.length) return null;
+    const g=groupShell("Collections ("+_mine.length+")", null);
+    const row=document.createElement("div"); row.style.cssText="display:flex;gap:6px;flex-wrap:wrap;padding:2px 0";
+    _mine.forEach(k=>{ const b=document.createElement("button"); b.className="btn sm";
+      b.textContent="● "+(collLabel(_cs[k])||k); b.title="Open this collection in the Collections editor";
+      b.onclick=()=>{ collSel=k; switchTab("collections"); renderCollections(); };
+      row.appendChild(b); });
+    g.appendChild(row); return g; });
+  safe("Sources", ()=>sourceGroup(c));
+  safe("Concept metadata", ()=>metaGroup(c));
+  safe("Linked artifacts", ()=>artifactGroup(c));
+  safe("Change history", ()=>historyGroup(c));
+  try{ updateSaveState(); }catch(e){ try{ console.error("updateSaveState failed",e); }catch(_){ } }
 }
 function statusGroup(c){
   const g=document.createElement("div"); g.className="grp";
