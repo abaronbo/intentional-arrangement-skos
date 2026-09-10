@@ -1929,10 +1929,18 @@ function diffConcept(base, cur){
   if((base.id||"")!==(cur.id||"")) ch.push(`Renamed from “${base.id}” to “${cur.id}”`);
   if(!!base.top!==!!cur.top) ch.push(cur.top?"Marked as a top concept":"Unmarked as a top concept");
   if((base.notation||"")!==(cur.notation||"")) ch.push(cur.notation?`Notation set to “${cur.notation}”`:"Notation cleared");
-  const labelDiff=(f,name)=>{ const b=labelsSet(base[f]),c=labelsSet(cur[f]);
-    const add=c.filter(x=>!b.includes(x)), rem=b.filter(x=>!c.includes(x));
-    if(f==="pref"&&add.length===1&&rem.length===1){ ch.push(`Preferred label changed from “${rem[0]}” to “${add[0]}”`); return; }
-    add.forEach(x=>ch.push(`${name} “${x}” added`)); rem.forEach(x=>ch.push(`${name} “${x}” removed`)); };
+  // Diff on the val@lang KEY (keeps "Recipe"@en and "Recept"@nl distinct across the
+  // set difference), but render the plain label into the human note — with a
+  // "(lang)" qualifier only when the language isn't the scheme default, so a
+  // monolingual vocabulary reads cleanly and a note never shows "Label@en" (#77).
+  const labelDiff=(f,name)=>{
+    const key=l=>l.val+(l.lang?"@"+l.lang:"");
+    const disp=l=> (l.lang && l.lang!==(model.defaultLang||"")) ? `${l.val} (${l.lang})` : l.val;
+    const B=(base[f]||[]).filter(l=>l.val), C=(cur[f]||[]).filter(l=>l.val);
+    const bKeys=new Set(B.map(key)), cKeys=new Set(C.map(key));
+    const add=C.filter(l=>!bKeys.has(key(l))), rem=B.filter(l=>!cKeys.has(key(l)));
+    if(f==="pref"&&add.length===1&&rem.length===1){ ch.push(`Preferred label changed from “${disp(rem[0])}” to “${disp(add[0])}”`); return; }
+    add.forEach(l=>ch.push(`${name} “${disp(l)}” added`)); rem.forEach(l=>ch.push(`${name} “${disp(l)}” removed`)); };
   labelDiff("pref","Preferred label"); labelDiff("alt","Alternative label"); labelDiff("hidden","Hidden label");
   const noteDiff=(f,name)=>{ const b=labelsSet(base[f]),c=labelsSet(cur[f]);
     const add=c.filter(x=>!b.includes(x)), rem=b.filter(x=>!c.includes(x));
@@ -1966,7 +1974,31 @@ function commitHistory(showToast){
   afterChange();
   return changes.length;
 }
-function seedHistory(c, msg){ c.history=c.history||[]; c.history.push({ ts:nowTs(), author:getEditor(), changes:[msg] }); }
+function seedHistory(c, msg, submitter){ c.history=c.history||[]; const e={ ts:nowTs(), author:getEditor(), changes:[msg] }; if(submitter) e.submitter=submitter; c.history.push(e); }
+// One-time, idempotent cleanup of previously-stored change-note prose so existing
+// workspaces don't keep exporting defective notes (#77, #78). Safe to run on every
+// load: once cleaned, the patterns no longer match.
+//  #77 — strip a BCP-47 tag glued inside a quoted label ("Label@en" -> "Label").
+//  #78 — lift a baked "(proposed by X)" out of the approval note into structured
+//        h.submitter, so the exporter renders attribution without doubling a name.
+function migrateHistoryNotes(m){
+  if(!m || !m.concepts) return false;
+  let changed=false;
+  for(const id in m.concepts){ const c=m.concepts[id]; if(!c || !Array.isArray(c.history)) continue;
+    for(const h of c.history){ if(!h || !Array.isArray(h.changes)) continue;
+      h.changes=h.changes.map(txt=>{
+        if(typeof txt!=="string") return txt; let t=txt;
+        if(/^Created from approved proposal/.test(t)){
+          const m2=t.match(/\(proposed by (.+?)\)/);
+          if(m2){ if(!h.submitter) h.submitter=m2[1]; t=t.replace(/\s*\(proposed by .+?\)/,"").trim(); }
+        }
+        t=t.replace(/@[A-Za-z]{2,3}(?:-[A-Za-z0-9]+)*(?=”)/g,"");
+        if(t!==txt) changed=true; return t;
+      });
+    }
+  }
+  return changed;
+}
 function updateSaveState(){
   const st=$('#saveStatus'), btn=$('#saveBtn');
   if(!st||!histBaseline||!model.concepts[histBaseId]) return;
@@ -3948,7 +3980,9 @@ function approveProposal(pid, parentIdArg){
   (p.altLabels||[]).forEach(s=>{ if(s) c.alt.push({lang:model.defaultLang,val:s}); });
   c.artifacts=(p.artifacts||[]).map(a=>({type:a.type,title:a.title,url:a.url}));
   if(top) c.top=true; else c.broader=[parentId];
-  seedHistory(c, "Created from approved proposal"+(p.submitter?` (proposed by ${p.submitter})`:""));
+  // Carry the proposer as structured data, not baked into the prose — the exporter
+  // renders one name or two, so approving your own proposal isn't named twice (#78).
+  seedHistory(c, "Created from approved proposal", p.submitter||"");
   model.concepts[id]=c; model.order.push(id);
   p.status="approved"; p.approvedId=id; p.parentId = top?null:parentId;
   p.decidedBy=getEditor(); p.decidedTs=nowTs();
@@ -5182,6 +5216,8 @@ function boot(){ try{ if(navigator.storage&&navigator.storage.persist) navigator
       if(!c.created){ c.created=d; ch=true; } if(!c.issued){ c.issued=d; ch=true; } if(!c.modified){ c.modified=d; ch=true; } if(!c.creator&&who){ c.creator=who; ch=true; } }
     if(ch) save();
   })();
+  // Repair legacy change-note prose in stored history (#77 @lang-in-label, #78 doubled attribution)
+  if(!SHARED && migrateHistoryNotes(model)) save();
   if(model.xlLabels) ensureXlUris(); ontoInit(); model.graph=model.graph||{pos:{}}; shaclInit(); histBaseId=null; histBaseline=null; setProjectChip(); renderScheme(); initTreeOpts(); renderTree(); renderEditor(); updateProposalPill(); if(typeof renderCollections==="function") updateCollPill(); if(typeof updateSrcPill==="function") updateSrcPill();
   browseSel=null; browseFilter=""; if($('#browseSearch')) $('#browseSearch').value="";
   if(valAuto) runValidation(); else updateBadgeQuick();
