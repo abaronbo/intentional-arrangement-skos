@@ -274,7 +274,11 @@ function buildTriples(model, opts){
         const changes = (h.changes || []).filter(Boolean).join("; ");
         if (!changes) return;
         const when = h.ts ? (isoDateTime(h.ts) || "").slice(0, 10) : "";
-        const who = h.author ? " (by " + h.author + ")" : "";
+        // Attribution from structured fields: a distinct proposer and approver
+        // read as two names, the same person reads once — never "(proposed by X) (by X)" (#78).
+        const who = (h.submitter && h.author && h.submitter !== h.author)
+          ? " (proposed by " + h.submitter + ", approved by " + h.author + ")"
+          : (h.author ? " (by " + h.author + ")" : (h.submitter ? " (proposed by " + h.submitter + ")" : ""));
         add(s, iri(NS.skos + "changeNote"), lit((when ? when + " — " : "") + changes + who, defLang));
       });
     }

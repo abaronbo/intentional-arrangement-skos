@@ -8,6 +8,11 @@ Legend: ✅ Shipped · 🚧 In progress · 🔜 Next · 💡 Planned
 
 ## ✅ Recently shipped
 
+### Cleaner change-note prose: no `@lang` in labels, no doubled attribution (v0.18.5)
+- **#77** — a label change note quoted the label with its language key glued on (`“Day Meal Plan@en”`). The diff still compares on the `val@lang` key, but the note now renders the plain label, adding a `(lang)` qualifier only when the language isn't the scheme default.
+- **#78** — approving your own proposal named you twice (`(proposed by X) (by X)`). The proposer is now structured data on the history entry; the exporter renders one name when proposer and approver match, and `(proposed by A, approved by B)` when they differ.
+- **Migration** — a one-time, idempotent pass on project load repairs both defects already stored in `history[].changes`, so existing workspaces stop exporting the old notes.
+
 ### The concept editor never blanks on one bad field (v0.18.4)
 - A concept whose stored data had a malformed field (e.g. a legacy shape where an array was expected) made the editor throw while building the form, leaving only the URI heading visible and every other field missing. Each editor section now renders in isolation: a bad field shows a small inline notice naming it, and the rest of the form renders normally. After a field report on the software example.
 
