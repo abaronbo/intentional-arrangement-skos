@@ -1975,27 +1975,45 @@ function commitHistory(showToast){
   return changes.length;
 }
 function seedHistory(c, msg, submitter){ c.history=c.history||[]; const e={ ts:nowTs(), author:getEditor(), changes:[msg] }; if(submitter) e.submitter=submitter; c.history.push(e); }
+// Repair defective change-note prose in a single string (idempotent):
+//  #77 — strip a BCP-47 tag glued inside a quoted label ("Label@en” -> "Label”),
+//        matching before a closing curly OR straight quote.
+//  #78 — collapse a doubled attribution "(proposed by X) (by X)" to "(by X)", and
+//        reformat a genuinely distinct pair to "(proposed by A, approved by B)".
+function repairNoteText(t){
+  if(typeof t!=="string") return t;
+  t=t.replace(/@[A-Za-z]{2,3}(?:-[A-Za-z0-9]+)*(?=[”"])/g,"");
+  t=t.replace(/\(proposed by (.+?)\) \(by \1\)/g,"(by $1)");
+  t=t.replace(/\(proposed by (.+?)\) \(by (.+?)\)/g,"(proposed by $1, approved by $2)");
+  return t;
+}
 // One-time, idempotent cleanup of previously-stored change-note prose so existing
 // workspaces don't keep exporting defective notes (#77, #78). Safe to run on every
-// load: once cleaned, the patterns no longer match.
-//  #77 — strip a BCP-47 tag glued inside a quoted label ("Label@en" -> "Label").
-//  #78 — lift a baked "(proposed by X)" out of the approval note into structured
-//        h.submitter, so the exporter renders attribution without doubling a name.
+// load: once cleaned, the patterns no longer match. Repairs BOTH storage sites:
+//  - live edit history (c.history[].changes) — where the "(by X)" suffix is added
+//    only at export, so a baked "(proposed by X)" is lifted into structured
+//    h.submitter and the exporter decides one name vs two;
+//  - change notes IMPORTED as literals (c.changeNote[].val) — which already carry
+//    the final combined text, so they're repaired in place. (#81: the earlier
+//    migration only walked history, so notes present at a user's last import kept
+//    their @en and doubled names — hence the apparent "date cutoff".)
 function migrateHistoryNotes(m){
   if(!m || !m.concepts) return false;
   let changed=false;
-  for(const id in m.concepts){ const c=m.concepts[id]; if(!c || !Array.isArray(c.history)) continue;
-    for(const h of c.history){ if(!h || !Array.isArray(h.changes)) continue;
+  for(const id in m.concepts){ const c=m.concepts[id]; if(!c) continue;
+    if(Array.isArray(c.history)) for(const h of c.history){ if(!h || !Array.isArray(h.changes)) continue;
       h.changes=h.changes.map(txt=>{
         if(typeof txt!=="string") return txt; let t=txt;
         if(/^Created from approved proposal/.test(t)){
           const m2=t.match(/\(proposed by (.+?)\)/);
           if(m2){ if(!h.submitter) h.submitter=m2[1]; t=t.replace(/\s*\(proposed by .+?\)/,"").trim(); }
         }
-        t=t.replace(/@[A-Za-z]{2,3}(?:-[A-Za-z0-9]+)*(?=”)/g,"");
+        t=repairNoteText(t);
         if(t!==txt) changed=true; return t;
       });
     }
+    if(Array.isArray(c.changeNote)) for(const L of c.changeNote){ if(!L || typeof L.val!=="string") continue;
+      const v=repairNoteText(L.val); if(v!==L.val){ L.val=v; changed=true; } }
   }
   return changed;
 }

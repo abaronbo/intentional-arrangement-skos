@@ -8,6 +8,9 @@ Legend: ✅ Shipped · 🚧 In progress · 🔜 Next · 💡 Planned
 
 ## ✅ Recently shipped
 
+### Change-note repair now also fixes imported notes (v0.18.6, #81)
+- The v0.18.5 migration only walked live edit history (`c.history`), so change notes a workspace had **imported** from an earlier export — stored as `skos:changeNote` literals in `c.changeNote` — kept their `@lang`-in-label and doubled attribution. That showed up as an apparent "date cutoff" (notes present at the last import were skipped). The migration now repairs both storage sites, so every stored change note is cleaned regardless of how it got there.
+
 ### Cleaner change-note prose: no `@lang` in labels, no doubled attribution (v0.18.5)
 - **#77** — a label change note quoted the label with its language key glued on (`“Day Meal Plan@en”`). The diff still compares on the `val@lang` key, but the note now renders the plain label, adding a `(lang)` qualifier only when the language isn't the scheme default.
 - **#78** — approving your own proposal named you twice (`(proposed by X) (by X)`). The proposer is now structured data on the history entry; the exporter renders one name when proposer and approver match, and `(proposed by A, approved by B)` when they differ.
