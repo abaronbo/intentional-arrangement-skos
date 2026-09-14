@@ -8,6 +8,9 @@ Legend: ✅ Shipped · 🚧 In progress · 🔜 Next · 💡 Planned
 
 ## ✅ Recently shipped
 
+### Collections record change history like concepts (v0.18.7, #84)
+- Editing a collection used to stamp `dcterms:modified` but leave no `skos:changeNote` — the audit trail concepts have had. Now editing a collection's name or note, toggling ordered, or adding/removing a member seeds a dated history entry that exports as `skos:changeNote` (tagged with the scheme default language). Imported collection change notes round-trip. Closes the last of the collection/concept parity gaps after #58.
+
 ### Change-note repair now also fixes imported notes (v0.18.6, #81)
 - The v0.18.5 migration only walked live edit history (`c.history`), so change notes a workspace had **imported** from an earlier export — stored as `skos:changeNote` literals in `c.changeNote` — kept their `@lang`-in-label and doubled attribution. That showed up as an apparent "date cutoff" (notes present at the last import were skipped). The migration now repairs both storage sites, so every stored change note is cleaned regardless of how it got there.
 
