@@ -297,6 +297,19 @@ function buildTriples(model, opts){
           if (opts.rlabel) add(cs, iri(NS.rdfs + "label"), lit(L.val, L.lang)); }
         else add(cs, iri(NS.skos + "altLabel"), lit(L.val, L.lang)); }); }
     (col.note || []).forEach(L => { if (L.val) add(cs, iri(NS.skos + "note"), lit(L.val, L.lang)); });
+    // change notes at parity with concepts (#84): explicit/round-tripped literals,
+    // plus notes generated from the collection's edit history (tagged with the
+    // scheme default language, like concept change notes).
+    (col.changeNote || []).forEach(L => { if (L.val) add(cs, iri(NS.skos + "changeNote"), lit(L.val, L.lang || defLang)); });
+    if (opts.dc && Array.isArray(col.history)){
+      col.history.forEach(h => {
+        const changes = (h.changes || []).filter(Boolean).join("; ");
+        if (!changes) return;
+        const when = h.ts ? (isoDateTime(h.ts) || "").slice(0, 10) : "";
+        const who = h.author ? " (by " + h.author + ")" : "";
+        add(cs, iri(NS.skos + "changeNote"), lit((when ? when + " — " : "") + changes + who, defLang));
+      });
+    }
     add(cs, iri(NS.skos + "inScheme"), iri(schemeUri));
     if (col.created) add(cs, iri(NS.dcterms + "created"), lit(dateOnly(col.created), "", NS.xsd + "date"));
     if (col.modified) add(cs, iri(NS.dcterms + "modified"), lit(dateOnly(col.modified), "", NS.xsd + "date"));
@@ -1629,13 +1642,14 @@ function triplesToModel(triples, prefixes){
     const isMember = m => model.concepts[m] || collLocals.has(m);
     for (const uri in collTypes){
       const cid = localOf(uri);
-      const col = { id:cid, label:[], note:[], ordered:!!collTypes[uri], members:[] };
+      const col = { id:cid, label:[], note:[], changeNote:[], ordered:!!collTypes[uri], members:[] };
       const memberList = triples.find(t => t.p.t==="iri" && t.s.v===uri && t.p.v===P+"memberList");
       const orderedMembers = memberList ? walkList(memberList.o) : null;
       for (const t of triples){ if (t.p.t!=="iri" || t.s.v!==uri) continue;
         if (t.p.v===NS.rdfs+"label" && t.o.t==="lit") col.label.push({lang:t.o.lang||"", val:t.o.v});
         else if ((t.p.v===P+"prefLabel" || t.p.v===P+"altLabel") && t.o.t==="lit") col.label.push({lang:t.o.lang||"", val:t.o.v});
         else if (t.p.v===P+"note" && t.o.t==="lit") col.note.push({lang:t.o.lang||"", val:t.o.v});
+        else if (t.p.v===P+"changeNote" && t.o.t==="lit") col.changeNote.push({lang:t.o.lang||"", val:t.o.v});
         else if (t.p.v===NS.dcterms+"created" && t.o.t==="lit") col.created = dateOnly(t.o.v);
         else if (t.p.v===NS.dcterms+"modified" && t.o.t==="lit") col.modified = dateOnly(t.o.v);
         else if (t.p.v===P+"member" && t.o.t==="iri"){ const m=idOf(t.o.v); if(isMember(m) && col.members.indexOf(m)<0) col.members.push(m); }

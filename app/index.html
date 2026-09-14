@@ -3622,6 +3622,8 @@ function renderAgentsSection(body){
   }
 }
 function collLabel(col){ const l=(col.label||[]).find(x=>x.val); return l?l.val:(col.id||"(untitled)"); }
+// Human name for a collection member (a concept or a sub-collection), for change notes.
+function collMemberName(mid){ return model.concepts[mid] ? (plabel(mid)||mid) : ((model.collections&&model.collections[mid]) ? collLabel(model.collections[mid]) : mid); }
 function newCollId(){ let n=1,id; do{ id="collection"+(n>1?n:""); n++; }while(localNameTaken(id)); return id; }
 // ---------- readable, stable identifiers for collections / documents / agents (#35, #37) ----------
 // Local names share one URI namespace with concepts, so uniqueness spans all four maps.
@@ -3772,12 +3774,15 @@ function renderCollections(){ updateCollPill(); const cs=colls(); const list=doc
     const r=document.createElement('div'); r.className="rowline"; r.style.marginBottom="4px";
     const lang=mkLangSelect(L, ()=>{ save(); });
     const nin=document.createElement('input'); nin.className="val"; nin.style.cssText="flex:1;padding:7px 9px;border:1px solid var(--border);border-radius:8px"; nin.value=L.val||"";
+    nin.onfocus=()=>{ nin._old=(L.val||"").trim(); };
     nin.oninput=()=>{ L.val=nin.value; col.modified=todayISO(); save(); updateCollPill(); };
     nin.onchange=()=>{ const v=nin.value.trim(); if(v!==nin.value){ nin.value=v; L.val=v; save(); }
+      const old=(nin._old!==undefined?nin._old:v);
+      if(v!==old){ seedHistory(col, old&&v ? `Name changed from “${old}” to “${v}”` : (v ? `Name “${v}” added` : `Name “${old}” removed`)); col.modified=todayISO(); save(); }
       if(i===0&&isAutoId(col.id,"collection")&&v&&!/^New (ordered )?collection$/i.test(v)){ const nid=slugLocalId(v,col.id); if(nid&&nid!==col.id) renameCollection(col.id,nid); }
       renderCollections(); };
     const rm=document.createElement('button'); rm.className="rmv"; rm.textContent="✕"; rm.title="remove";
-    rm.onclick=()=>{ col.label.splice(i,1); save(); renderCollections(); };
+    rm.onclick=()=>{ const removed=(L.val||"").trim(); col.label.splice(i,1); if(removed){ seedHistory(col, `Name “${removed}” removed`); col.modified=todayISO(); } save(); renderCollections(); };
     r.append(lang,nin,rm); nameW.appendChild(r); });
   ed.appendChild(nameW);
   // identifier (URI local name) — readable, stable, editable (#37)
@@ -3790,7 +3795,7 @@ function renderCollections(){ updateCollPill(); const cs=colls(); const list=doc
   idrow.append(idin,sy); idW.append(idlab,idrow,hint); ed.appendChild(idW);
   // type toggle + delete
   const tW=document.createElement('div'); tW.style.cssText="display:flex;align-items:center;gap:14px;margin-bottom:14px;flex-wrap:wrap";
-  const ol=document.createElement('label'); ol.style.cssText="font-size:13px;display:flex;align-items:center;gap:6px;cursor:pointer"; const ocb=document.createElement('input'); ocb.type="checkbox"; ocb.checked=!!col.ordered; ocb.onchange=()=>{ col.ordered=ocb.checked; col.modified=todayISO(); save(); renderCollections(); }; ol.append(ocb, document.createTextNode("Ordered collection (preserves member order via skos:memberList)"));
+  const ol=document.createElement('label'); ol.style.cssText="font-size:13px;display:flex;align-items:center;gap:6px;cursor:pointer"; const ocb=document.createElement('input'); ocb.type="checkbox"; ocb.checked=!!col.ordered; ocb.onchange=()=>{ col.ordered=ocb.checked; col.modified=todayISO(); seedHistory(col, ocb.checked?"Marked as an ordered collection":"Marked as an unordered collection"); save(); renderCollections(); }; ol.append(ocb, document.createTextNode("Ordered collection (preserves member order via skos:memberList)"));
   const del=document.createElement('button'); del.className="btn sm"; del.textContent="Delete collection"; del.style.marginLeft="auto"; del.onclick=()=>deleteCollection(col.id);
   tW.append(ol,del); ed.appendChild(tW);
   // notes — language-tagged rows (#69); each exports as skos:note
@@ -3802,9 +3807,12 @@ function renderCollections(){ updateCollPill(); const cs=colls(); const list=doc
     const r=document.createElement('div'); r.className="rowline"; r.style.marginBottom="4px";
     const lang=mkLangSelect(L, ()=>{ save(); });
     const nta=document.createElement('textarea'); nta.className="val"; nta.style.cssText="flex:1;padding:7px 9px;border:1px solid var(--border);border-radius:8px"; nta.rows=2; nta.value=L.val||"";
+    nta.onfocus=()=>{ nta._old=(L.val||"").trim(); };
     nta.oninput=()=>{ L.val=nta.value; col.modified=todayISO(); save(); };
+    nta.onchange=()=>{ const v=(nta.value||"").trim(); const old=(nta._old!==undefined?nta._old:v);
+      if(v!==old){ seedHistory(col, old&&v ? "Note updated" : (v ? "Note added" : "Note removed")); col.modified=todayISO(); save(); } };
     const rm=document.createElement('button'); rm.className="rmv"; rm.textContent="✕"; rm.title="remove";
-    rm.onclick=()=>{ col.note.splice(i,1); save(); renderCollections(); };
+    rm.onclick=()=>{ const had=(L.val||"").trim(); col.note.splice(i,1); if(had){ seedHistory(col, "Note removed"); col.modified=todayISO(); } save(); renderCollections(); };
     r.append(lang,nta,rm); noteW.appendChild(r); });
   ed.appendChild(noteW);
   // members
@@ -3819,7 +3827,7 @@ function renderCollections(){ updateCollPill(); const cs=colls(); const list=doc
     r.appendChild(nm);
     if(col.ordered){ const up=document.createElement('button'); up.className="btn sm"; up.textContent="▲"; up.disabled=i===0; up.onclick=()=>{ const m=col.members; [m[i-1],m[i]]=[m[i],m[i-1]]; save(); renderCollections(); };
       const dn=document.createElement('button'); dn.className="btn sm"; dn.textContent="▼"; dn.disabled=i===col.members.length-1; dn.onclick=()=>{ const m=col.members; [m[i+1],m[i]]=[m[i],m[i+1]]; save(); renderCollections(); }; r.append(up,dn); }
-    const rm=document.createElement('button'); rm.className="btn sm"; rm.textContent="✕"; rm.title="Remove from collection"; rm.onclick=()=>{ col.members.splice(i,1); col.modified=todayISO(); save(); renderCollections(); }; r.appendChild(rm); mlist.appendChild(r); });
+    const rm=document.createElement('button'); rm.className="btn sm"; rm.textContent="✕"; rm.title="Remove from collection"; rm.onclick=()=>{ const mid=col.members[i]; col.members.splice(i,1); col.modified=todayISO(); seedHistory(col, `Member “${collMemberName(mid)}” removed`); save(); renderCollections(); }; r.appendChild(rm); mlist.appendChild(r); });
   if(!(col.members||[]).length){ const e=document.createElement('div'); e.className="subtle"; e.style.cssText="font-size:12px;padding:4px 0 10px"; e.textContent="No members yet — add concepts or sub-collections below."; mlist.appendChild(e); }
   ed.appendChild(mlist);
   // add member — concepts and other collections (nesting), excluding cycles
@@ -3831,7 +3839,7 @@ function renderCollections(){ updateCollPill(); const cs=colls(); const list=doc
   if(availColl.length) html+='<optgroup label="Collections (nest)">'+availColl.map(k=>'<option value="'+k+'">▦ '+escapeHtml(collLabel(cs[k]))+'</option>').join("")+'</optgroup>';
   html+='<optgroup label="Concepts">'+availC.map(id=>'<option value="'+id+'">'+escapeHtml(plabel(id))+'</option>').join("")+'</optgroup>';
   sel.innerHTML=html;
-  sel.onchange=()=>{ if(sel.value){ (col.members=col.members||[]).push(sel.value); col.modified=todayISO(); save(); renderCollections(); } };
+  sel.onchange=()=>{ if(sel.value){ (col.members=col.members||[]).push(sel.value); col.modified=todayISO(); seedHistory(col, `Member “${collMemberName(sel.value)}” added`); save(); renderCollections(); } };
   addW.appendChild(sel); ed.appendChild(addW);
 }
 if(document.getElementById('collNew')) document.getElementById('collNew').onclick=()=>createCollection(false);
