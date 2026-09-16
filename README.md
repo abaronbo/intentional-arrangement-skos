@@ -117,6 +117,10 @@ The app is live on GitHub Pages (repo **Settings → Pages → Source: GitHub Ac
 
 All data stays in the visitor's browser, so hosting shares the tool and never anyone's vocabularies.
 
+## Security & dependencies
+
+Dependencies and the Docker base image are kept current automatically: **Renovate** raises version-update PRs (weekly) and **automerges `eclipse-temurin` base-image digest bumps at any time** so a rebuilt base picks up OS patches on its own; **Dependabot** raises security-advisory PRs immediately; and a daily **`security-audit` workflow** is the backstop that catches any pin, digest, or SRI drift the bots miss. See [SECURITY-AUDIT.md](SECURITY-AUDIT.md) for the full policy and [SECURITY.md](SECURITY.md) to report a vulnerability.
+
 ## Roadmap & feedback
 
 [ROADMAP.md](ROADMAP.md) tracks what's shipped, in progress, and planned. Ideas and bug reports shape that list — several recent releases came straight from the community.

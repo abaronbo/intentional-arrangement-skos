@@ -13,8 +13,16 @@ rather than from scratch.
 | | Owner | Cadence |
 |---|---|---|
 | Version update PRs | **Renovate** (`renovate.json`) | Weekly, Monday before 06:00 UTC |
+| Base-image digest bumps | **Renovate** (`renovate.json`) | At any time, **automerged** |
 | Security advisory PRs | **Dependabot** (`.github/dependabot.yml`) | Immediately on advisory |
-| Pin / digest / SRI drift | **`security-audit` workflow** | Daily, 06:17 UTC |
+| Pin / digest / SRI drift | **`security-audit` workflow** | Daily, 06:17 UTC (backstop) |
+
+Base-image digest updates are handled out-of-band from the weekly window: a
+digest-only bump of the same `eclipse-temurin:17-jre` tag is a low-risk base-OS
+patch refresh, so Renovate raises it *at any time* and automerges it. That keeps
+the pin fresh on its own, so the daily audit is now a backstop rather than the
+thing that catches the drift — before this, the digest could sit stale until the
+audit filed it as a manual ticket.
 
 The two bots are deliberately not doing the same job. Every Dependabot entry sets
 `open-pull-requests-limit: 0`, which suppresses its routine version PRs while leaving
@@ -62,9 +70,13 @@ not. Every build was reproducibly producing a container on a base image that no 
 matched upstream, missing whatever base-OS patches that rebuild carried. A digest pin
 without a freshness check trades one risk for another.
 
-Refreshed to `sha256:13cc28a6…`, verified as a like-for-like OCI index covering the same
-six platforms. Renovate's Docker manager now raises this bump, and the daily audit fails
-if the pin drifts from the live tag again.
+Refreshed to the current digest, verified as a like-for-like OCI index covering the same
+six platforms. Renovate's Docker manager now raises this bump **at any time and
+automerges it** (a digest-only move of the same tag is a base-OS patch refresh, not a
+version change), so the pin self-heals; the daily audit fails only as a backstop if the
+pin ever drifts from the live tag. Before automerge, the digest could drift for days
+between the tag's rebuild and Renovate's weekly window, and the audit would file it as a
+recurring manual HIGH ticket (this happened twice — the reason automerge was added).
 
 ### Why the tag stays `17-jre`
 
