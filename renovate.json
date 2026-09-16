@@ -75,10 +75,18 @@
       "groupName": "github actions"
     },
     {
-      "description": "Base image is pinned by digest on purpose \u2014 keep the digest fresh so base-OS CVEs get picked up.",
+      "description": "Base image is pinned by digest on purpose. Digest-only updates of the same tag (17-jre rebuilt with base-OS patches) are low-risk, so raise them at any time and automerge them, rather than waiting for the weekly window. Otherwise the digest drifts until the daily security-audit workflow files it as a manual HIGH ticket; this keeps the pin fresh on its own so base-OS CVEs are picked up automatically.",
       "matchManagers": [
         "dockerfile"
       ],
+      "matchUpdateTypes": [
+        "digest",
+        "pinDigest"
+      ],
+      "schedule": [
+        "at any time"
+      ],
+      "automerge": true,
       "groupName": "container base images"
     },
     {
