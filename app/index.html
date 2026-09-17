@@ -2017,6 +2017,40 @@ function migrateHistoryNotes(m){
   }
   return changed;
 }
+// A label/note list is well-formed only if it's an array of {val:string, lang:string}
+// objects. A null entry, a bare string, or a field saved as a non-array makes the
+// editor's label renderer throw (the "Couldn't render 'Preferred labels'…" notice).
+function labelListOk(v){
+  if(!Array.isArray(v)) return false;
+  for(const L of v){ if(L==null || typeof L!=="object" || typeof L.val!=="string" || typeof L.lang!=="string") return false; }
+  return true;
+}
+function normalizeLabelList(v, dl){
+  if(v==null) return [];
+  if(!Array.isArray(v)) v=[v];
+  const out=[];
+  for(const L of v){
+    if(L==null) continue;
+    if(typeof L==="object"){ const e={ lang: typeof L.lang==="string"?L.lang:(L.lang==null?"":String(L.lang)), val: (L.val==null?"":String(L.val)) };
+      if(L.uri) e.uri=String(L.uri); if(L.source) e.source=String(L.source); out.push(e); }
+    else { const s=String(L); if(s.trim()) out.push({ lang:(dl||""), val:s }); }
+  }
+  return out;
+}
+// Repair malformed label/note arrays in stored data so the editor renders every
+// field instead of showing a per-field "may be malformed" notice. Idempotent — runs
+// on project load, touches only fields that are actually malformed.
+function normalizeConceptData(m){
+  if(!m || !m.concepts) return false;
+  const dl=(m.defaultLang||"");
+  const CFIELDS=["pref","alt","hidden","rdfsLabel","comment","definition","scopeNote","changeNote","historyNote","editorialNote","example"];
+  const COLLFIELDS=["label","note","changeNote"];
+  let changed=false;
+  const fix=(obj,fields)=>{ if(!obj) return; for(const f of fields){ if(!(f in obj)) continue; if(!labelListOk(obj[f])){ obj[f]=normalizeLabelList(obj[f], dl); changed=true; } } };
+  for(const id in m.concepts) fix(m.concepts[id], CFIELDS);
+  if(m.collections) for(const cid in m.collections) fix(m.collections[cid], COLLFIELDS);
+  return changed;
+}
 function updateSaveState(){
   const st=$('#saveStatus'), btn=$('#saveBtn');
   if(!st||!histBaseline||!model.concepts[histBaseId]) return;
@@ -2222,6 +2256,7 @@ const LANGS = [
 ];
 const LANG_CODES = new Set(LANGS.map(l => l.code));
 function mkLangSelect(L, onchange){
+  if(L==null||typeof L!=="object") L={};   // defensive: never throw on a malformed label entry
   const sel=document.createElement("select"); sel.className="lang"; sel.title="Language tag (ISO 639-1)";
   const cur=(L.lang||"").trim();
   if(!cur){ const o=document.createElement("option"); o.value=""; o.textContent="— no tag —"; sel.appendChild(o); }
@@ -5242,6 +5277,9 @@ function boot(){ try{ if(navigator.storage&&navigator.storage.persist) navigator
       if(!c.created){ c.created=d; ch=true; } if(!c.issued){ c.issued=d; ch=true; } if(!c.modified){ c.modified=d; ch=true; } if(!c.creator&&who){ c.creator=who; ch=true; } }
     if(ch) save();
   })();
+  // Repair malformed label/note arrays so the editor never throws on a bad entry
+  // (a null in a label list, or a field saved as a non-array).
+  if(!SHARED && normalizeConceptData(model)) save();
   // Repair legacy change-note prose in stored history (#77 @lang-in-label, #78 doubled attribution)
   if(!SHARED && migrateHistoryNotes(model)) save();
   if(model.xlLabels) ensureXlUris(); ontoInit(); model.graph=model.graph||{pos:{}}; shaclInit(); histBaseId=null; histBaseline=null; setProjectChip(); renderScheme(); initTreeOpts(); renderTree(); renderEditor(); updateProposalPill(); if(typeof renderCollections==="function") updateCollPill(); if(typeof updateSrcPill==="function") updateSrcPill();
