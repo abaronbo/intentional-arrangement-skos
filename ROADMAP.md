@@ -8,6 +8,9 @@ Legend: ✅ Shipped · 🚧 In progress · 🔜 Next · 💡 Planned
 
 ## ✅ Recently shipped
 
+### Malformed label data is repaired on load, not just isolated (v0.18.8)
+- A concept whose stored `pref`/`alt` (or any label/note) had a bad entry — a `null` in the list, or a field saved as a non-array — made the label renderer throw. The fault-tolerant editor caught it and showed a "Couldn't render 'Preferred labels' — re-enter to repair" notice, but the underlying data stayed broken. A project now runs a normalizer on load that coerces every label/note field to a clean array of `{val, lang}` (dropping nulls, wrapping stray strings), so the fields render correctly with no manual re-entry. Idempotent.
+
 ### Collections record change history like concepts (v0.18.7, #84)
 - Editing a collection used to stamp `dcterms:modified` but leave no `skos:changeNote` — the audit trail concepts have had. Now editing a collection's name or note, toggling ordered, or adding/removing a member seeds a dated history entry that exports as `skos:changeNote` (tagged with the scheme default language). Imported collection change notes round-trip. Closes the last of the collection/concept parity gaps after #58.
 
