@@ -100,14 +100,14 @@
       "allowedVersions": "/^17-jre$/"
     },
     {
-      "description": "Fuseki majors change the server config surface; never automate them.",
+      "description": "Fuseki majors declined by decision (2026-09-18): the 5.x pin backs the free editor's optional self-host image and stays digest-watched by the daily audit; the product backend is Fluree. Do not propose majors at all — revisit only if a 5.x security advisory fires.",
       "matchDepNames": [
         "org.apache.jena:jena-fuseki-main"
       ],
       "matchUpdateTypes": [
         "major"
       ],
-      "dependencyDashboardApproval": true
+      "enabled": false
     }
   ]
 }
