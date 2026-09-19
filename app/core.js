@@ -546,7 +546,7 @@ function toCsv(model){ return gridToCsv(modelToGrid(model)); }
 // their id or prefLabel. This round-trips with toCsv().
 // ============================================================================
 function parseCsvText(text){
-  text = String(text).replace(/^﻿/, "");
+  text = String(text).replace(/^\uFEFF/, "");
   const nl = text.search(/\r?\n/);
   const firstLine = text.slice(0, nl >= 0 ? nl : text.length);
   const c = { ",": (firstLine.match(/,/g)||[]).length, ";": (firstLine.match(/;/g)||[]).length, "\t": (firstLine.match(/\t/g)||[]).length };
@@ -1265,7 +1265,7 @@ function parseRdfXml(text){
   // DOCTYPE, and that is the only place XML entities can be declared — reject it up
   // front so a "billion laughs" payload can never reach the parser.
   if (/<!DOCTYPE/i.test(text)) throw new Error("RDF/XML with a DOCTYPE declaration is not supported.");
-  const doc = new DOMParser().parseFromString(text.replace(/^[\s﻿]+/, ""), "application/xml");
+  const doc = new DOMParser().parseFromString(text.replace(/^[\s\uFEFF]+/, ""), "application/xml");
   const err = doc.getElementsByTagName("parsererror");
   if (err && err.length) throw new Error("RDF/XML parse error: " + (err[0].textContent || "").replace(/\s+/g, " ").trim().slice(0, 160));
   const root = doc.documentElement;
@@ -1313,8 +1313,8 @@ function parseRdfXml(text){
 function parseTriples(text){
   // RDF/XML is a different syntax — detect it and hand off to the XML parser.
   const _h = text.slice(0, 1200);
-  if (/^\s*﻿?\s*<\?xml/i.test(text) || /<rdf:RDF[\s>]/.test(_h) ||
-      (/^\s*﻿?\s*</.test(text) && /xmlns:rdf\s*=\s*["']http:\/\/www\.w3\.org\/1999\/02\/22-rdf-syntax-ns#["']/.test(_h)))
+  if (/^\s*\uFEFF?\s*<\?xml/i.test(text) || /<rdf:RDF[\s>]/.test(_h) ||
+      (/^\s*\uFEFF?\s*</.test(text) && /xmlns:rdf\s*=\s*["']http:\/\/www\.w3\.org\/1999\/02\/22-rdf-syntax-ns#["']/.test(_h)))
     return parseRdfXml(text);
   // tokenizer
   const toks = [];
