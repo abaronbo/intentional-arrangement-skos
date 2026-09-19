@@ -1360,6 +1360,7 @@
     <div class="modal-b"><p id="confirmMsg" style="margin:0;color:var(--muted);line-height:1.55"></p></div>
     <div class="modal-f">
       <button class="btn" id="confirmCancel">Cancel</button>
+      <button class="btn" id="confirmAlt" style="display:none;color:var(--err)"></button>
       <button class="btn primary" id="confirmOk">Confirm</button>
     </div>
   </div>
@@ -1695,27 +1696,58 @@ function addConcept(parentId){
   save(); renderTree(); selectConcept(id); afterChange();
   const inp = $('#editor input.val'); if(inp) inp.focus();
 }
+// The concepts `ids` plus, transitively, every descendant that would be left with no
+// hierarchical parent once they are gone. A descendant that also hangs under a surviving
+// parent (polyhierarchy) is not included — it keeps its place under that other parent.
+function cascadeSet(ids){
+  const del=new Set(ids); let grew=true;
+  while(grew){ grew=false;
+    for(const x of model.order){ if(del.has(x)) continue;
+      const par=hierParents(model.concepts[x]).filter(p=>model.concepts[p]);
+      if(par.length && par.every(p=>del.has(p))){ del.add(x); grew=true; } } }
+  return del;
+}
+// Remove a set of concepts and every hierarchical/associative reference to them from the rest.
+function purgeConcepts(del){
+  for(const id of del) delete model.concepts[id];
+  model.order=model.order.filter(x=>!del.has(x));
+  for(const x of model.order){ const o=model.concepts[x];
+    o.broader=(o.broader||[]).filter(b=>!del.has(b)); o.related=(o.related||[]).filter(r=>!del.has(r)); for(const f of ISO_BROADER) o[f]=(o[f]||[]).filter(b=>!del.has(b)); }
+  if(del.has(selected)) selected=null;
+  unpromoteGlossRefs(del);
+}
+const plural=(n,one,many)=>n===1?one:(many===undefined?one+"s":many);
 async function deleteConcept(id){
   const c=model.concepts[id]; if(!c) return;
-  const kids = model.order.filter(x=>hierParents(model.concepts[x]).includes(id));
   const nm = label(id)||id;
-  const msg = kids.length? `Delete “${nm}” and detach ${kids.length} child concept(s)? The children are kept but lose this parent.` : `Delete “${nm}”?`;
-  if(!await askConfirm(msg,"Delete")) return;
-  pushUndo("delete of “"+nm+"”");
-  delete model.concepts[id]; model.order = model.order.filter(x=>x!==id);
-  for(const x of model.order){ const o=model.concepts[x];
-    o.broader=(o.broader||[]).filter(b=>b!==id); o.related=(o.related||[]).filter(r=>r!==id); for(const f of ISO_BROADER) o[f]=(o[f]||[]).filter(b=>b!==id); }
-  if(selected===id) selected=null;
-  unpromoteGlossRefs(id);
-  save(); renderTree(); renderEditor(); afterChange(); toast("Deleted “"+nm+"” · ⌘/Ctrl+Z to undo");
+  const kids = childrenOf(id);
+  const cas = cascadeSet([id]); const below = cas.size-1;   // descendants that would be orphaned
+  let del = new Set([id]);
+  if(below){
+    const kept = kids.filter(k=>!cas.has(k)).length;
+    const msg = `Delete “${nm}”? ${below} ${plural(below,"concept")} ${plural(below,"sits","sit")} below it in this branch.`
+      + (kept? ` ${kept} child ${plural(kept,"concept")} with another parent ${plural(kept,"is","are")} kept either way.` : "");
+    const ans = await askConfirm(msg, "Delete, keep children", `Delete all`);
+    if(!ans) return; if(ans==="alt") del=cas;
+  } else {
+    const msg = kids.length? `Delete “${nm}”? Its ${kids.length} child ${plural(kids.length,"concept")} also ${plural(kids.length,"has","have")} another parent and ${plural(kids.length,"is","are")} kept.` : `Delete “${nm}”?`;
+    if(!await askConfirm(msg,"Delete")) return;
+  }
+  const extra = del.size-1, extraTxt = extra? ` and ${extra} ${plural(extra,"descendant")}` : "";
+  pushUndo("delete of “"+nm+"”"+extraTxt);
+  purgeConcepts(del);
+  save(); renderTree(); renderEditor(); afterChange(); toast("Deleted “"+nm+"”"+extraTxt+" · ⌘/Ctrl+Z to undo");
 }
 // sandbox-safe confirmation (native confirm() is blocked inside the artifact iframe)
-function askConfirm(msg, okLabel){
+// Pass altLabel to offer a second way to proceed; the promise then resolves "alt" for that
+// button (truthy, so two-button callers testing `if(!await askConfirm(...))` are unaffected).
+function askConfirm(msg, okLabel, altLabel){
   return new Promise(res=>{
     $('#confirmMsg').textContent=msg; $('#confirmOk').textContent=okLabel||"Confirm";
+    const alt=$('#confirmAlt'); alt.textContent=altLabel||""; alt.style.display=altLabel?"":"none";
     $('#confirmModal').classList.add('show'); $('#confirmOk').focus();
-    const done=v=>{ $('#confirmModal').classList.remove('show'); $('#confirmOk').onclick=null; $('#confirmCancel').onclick=null; res(v); };
-    $('#confirmOk').onclick=()=>done(true); $('#confirmCancel').onclick=()=>done(false);
+    const done=v=>{ $('#confirmModal').classList.remove('show'); $('#confirmOk').onclick=null; $('#confirmCancel').onclick=null; alt.onclick=null; alt.style.display="none"; res(v); };
+    $('#confirmOk').onclick=()=>done(true); $('#confirmCancel').onclick=()=>done(false); alt.onclick=()=>done("alt");
   });
 }
 function duplicateConcept(id){
@@ -1890,15 +1922,16 @@ function bulkSelectAll(){ const vis=window._vis; model.order.forEach(id=>{ if(!v
 function bulkSelectNone(){ bulkSel.clear(); bulkCount(); renderTree(); }
 function isDescendantOf(cand, of){ const seen=new Set(); const stack=childrenOf(of).slice();
   while(stack.length){ const u=stack.pop(); if(u===cand) return true; if(seen.has(u)) continue; seen.add(u); for(const k of childrenOf(u)) stack.push(k); } return false; }
-async function bulkDelete(){ if(!bulkSel.size) return; const ids=[...bulkSel];
-  if(!await askConfirm(`Delete ${ids.length} concept${ids.length===1?"":"s"}? Child concepts are kept but detached from any deleted parent.`,"Delete "+ids.length)) return;
-  pushUndo("delete of "+ids.length+" concept"+(ids.length===1?"":"s"));
-  const del=new Set(ids); for(const id of ids) delete model.concepts[id];
-  model.order=model.order.filter(x=>!del.has(x));
-  for(const x of model.order){ const o=model.concepts[x]; o.broader=(o.broader||[]).filter(b=>!del.has(b)); o.related=(o.related||[]).filter(r=>!del.has(r)); for(const f of ISO_BROADER) o[f]=(o[f]||[]).filter(b=>!del.has(b)); }
-  if(del.has(selected)) selected=null;
-  unpromoteGlossRefs(del);
-  bulkSel.clear(); save(); renderTree(); renderEditor(); afterChange(); bulkPopulateParent(); bulkCount(); toast(ids.length+" concept"+(ids.length===1?"":"s")+" deleted · ⌘/Ctrl+Z to undo"); }
+async function bulkDelete(){ if(!bulkSel.size) return; const ids=[...bulkSel]; const n=ids.length;
+  const cas=cascadeSet(ids); const below=cas.size-n; let del=new Set(ids);   // `below`: descendants that would be orphaned
+  if(below){
+    const ans=await askConfirm(`Delete ${n} ${plural(n,"concept")}? ${below} ${plural(below,"concept")} ${plural(below,"sits","sit")} below ${plural(n,"it","them")} in ${plural(n,"this branch","these branches")}.`,"Delete, keep children",`Delete all`);
+    if(!ans) return; if(ans==="alt") del=cas;
+  } else if(!await askConfirm(`Delete ${n} ${plural(n,"concept")}?`,"Delete "+n)) return;
+  const total=del.size;
+  pushUndo("delete of "+total+" "+plural(total,"concept"));
+  purgeConcepts(del);
+  bulkSel.clear(); save(); renderTree(); renderEditor(); afterChange(); bulkPopulateParent(); bulkCount(); toast(total+" "+plural(total,"concept")+" deleted · ⌘/Ctrl+Z to undo"); }
 if($('#btnUndo')) $('#btnUndo').onclick=doUndo;
 function bulkMoveUnder(parent){ if(!bulkSel.size) return; let moved=0, skipped=0;
   for(const id of [...bulkSel]){ const c=model.concepts[id]; if(!c) continue;

@@ -27,6 +27,7 @@ The Build tab is where the work happens. The tree of concepts sits on the left; 
 - **Add a top concept** with the button above the tree. A top concept sits at the root — it has no parent.
 - **Add a child** to build depth. A child points up to its parent through `broader`.
 - Select any concept in the tree to edit it. Drag or use the concept's own fields to change where it sits.
+- **Delete a concept** with ✕ on its tree row. If other concepts sit below it in the branch, you choose: **Delete, keep children** removes only this concept (its children become top concepts and keep everything below them), or **Delete all** removes the whole branch. A descendant that also sits under a parent outside the branch is kept either way. Bulk delete offers the same choice, and ⌘/Ctrl+Z undoes both.
 
 **Jump to a related concept.** In a concept's **Broader**, **Related**, or ISO 25964 pickers, click a linked concept to jump straight to it in the tree (it expands and scrolls into view). The same works for concept members in the Collections editor.
 
