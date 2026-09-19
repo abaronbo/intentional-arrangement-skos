@@ -8,6 +8,9 @@ Legend: ✅ Shipped · 🚧 In progress · 🔜 Next · 💡 Planned
 
 ## ✅ Recently shipped
 
+### Sources tab reworked to a tree + editor (v0.18.9)
+- The Sources tab now matches Build: a tree on the left with collapsible **Documents** and **Agents** groups, counts, and a filter box, and a Source editor on the right. Renaming a document or agent re-keys it **in place** — it keeps its row and its position in the export instead of jumping to the end — and scheme creator/contributor/publisher references follow the rename. The agent editor shows its scheme role. No change to the exported RDF. Contributed by @abaronbo (#98).
+
 ### Malformed label data is repaired on load, not just isolated (v0.18.8)
 - A concept whose stored `pref`/`alt` (or any label/note) had a bad entry — a `null` in the list, or a field saved as a non-array — made the label renderer throw. The fault-tolerant editor caught it and showed a "Couldn't render 'Preferred labels' — re-enter to repair" notice, but the underlying data stayed broken. A project now runs a normalizer on load that coerces every label/note field to a clean array of `{val, lang}` (dropping nulls, wrapping stray strings), so the fields render correctly with no manual re-entry. Idempotent.
 
