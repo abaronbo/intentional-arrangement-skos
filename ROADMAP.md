@@ -8,6 +8,9 @@ Legend: ✅ Shipped · 🚧 In progress · 🔜 Next · 💡 Planned
 
 ## ✅ Recently shipped
 
+### Fix: SKOS-XL editor threw on every label (v0.18.10)
+- With SKOS-XL enabled, the concept editor referenced `LABEL_FIELDS` — a constant that lives inside `core.js`'s closure and isn't in scope in the page — so rendering any label with a value threw a `ReferenceError`. Every concept showed "Couldn't render Preferred/Alternative labels" (empty Hidden labels didn't iterate, so they looked fine). Replaced with an inline `["pref","alt","hidden"]` check. Plain-SKOS mode was unaffected, which is why it slipped past earlier tests.
+
 ### Sources tab reworked to a tree + editor (v0.18.9)
 - The Sources tab now matches Build: a tree on the left with collapsible **Documents** and **Agents** groups, counts, and a filter box, and a Source editor on the right. Renaming a document or agent re-keys it **in place** — it keeps its row and its position in the export instead of jumping to the end — and scheme creator/contributor/publisher references follow the rename. The agent editor shows its scheme role. No change to the exported RDF. Contributed by @abaronbo (#98).
 

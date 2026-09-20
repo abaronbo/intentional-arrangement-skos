@@ -2327,7 +2327,7 @@ function labelGroup(title, c, field, isPref){
     rm.onclick=()=>{ c[field].splice(i,1); renderEditor(); save(); afterChange(); };
     row.append(lang,val,rm); g.appendChild(row);
     // SKOS-XL: each label carries its own URI + optional source/provenance
-    if(model.xlLabels && LABEL_FIELDS.includes(field)){
+    if(model.xlLabels && ["pref","alt","hidden"].includes(field)){
       const meta=document.createElement("div"); meta.className="lbl-xl";
       const uri=document.createElement("input"); uri.className="xluri"; uri.value=L.uri||""; uri.title="skosxl:Label identifier — assigned automatically ("+((model.idStyle||"text")==="uuid"?"UUID":"stable")+"). Edit to override; clear to regenerate.";
       uri.placeholder=Core.xlLabelUri(model, selected, field, i+1, L.lang);
