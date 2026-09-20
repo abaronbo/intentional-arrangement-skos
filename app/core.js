@@ -47,6 +47,9 @@ function conceptUri(model, id){ return model.base + id; }
 // A concept keeps its ORIGINAL URI when it came from another namespace (federated
 // imports): c.uri overrides the minted base+id everywhere the concept is referenced.
 function conceptRes(model, id){ const c = model.concepts && model.concepts[id]; return (c && c.uri) ? c.uri : model.base + id; }
+// Same for collections: an imported collection outside the base namespace keeps its
+// original URI in col.uri; everywhere else the URI is minted as base + id.
+function collectionRes(model, cid){ const col = model.collections && model.collections[cid]; return (col && col.uri) ? col.uri : model.base + cid; }
 
 function emptyConcept(id){
   return { id, notation: "", pref: [], alt: [], hidden: [],
@@ -287,7 +290,7 @@ function buildTriples(model, opts){
   let _bn = 0;
   for (const cid in (model.collections || {})){
     const col = model.collections[cid];
-    const cs = iri(conceptUri(model, cid));
+    const cs = iri(collectionRes(model, cid));
     add(cs, A, iri(NS.skos + (col.ordered ? "OrderedCollection" : "Collection")));
     // labels at parity with concepts (#58): first label per language is the
     // skos:prefLabel (S14-safe), any further same-language labels are altLabels
@@ -314,12 +317,12 @@ function buildTriples(model, opts){
     if (col.created) add(cs, iri(NS.dcterms + "created"), lit(dateOnly(col.created), "", NS.xsd + "date"));
     if (col.modified) add(cs, iri(NS.dcterms + "modified"), lit(dateOnly(col.modified), "", NS.xsd + "date"));
     const mems = (col.members || []).filter(mid => model.concepts[mid] || (model.collections && model.collections[mid]));
-    mems.forEach(mid => add(cs, iri(NS.skos + "member"), iri(model.concepts[mid] ? conceptRes(model, mid) : conceptUri(model, mid))));
+    mems.forEach(mid => add(cs, iri(NS.skos + "member"), iri(model.concepts[mid] ? conceptRes(model, mid) : collectionRes(model, mid))));
     if (col.ordered && mems.length){        // ordered members as an rdf:List via skos:memberList
       let head = null, prev = null;
       mems.forEach(mid => {
         const node = bnode("L" + cid.replace(/[^A-Za-z0-9]/g, "") + "_" + (++_bn));
-        add(node, iri(NS.rdf + "first"), iri(model.concepts[mid] ? conceptRes(model, mid) : conceptUri(model, mid)));
+        add(node, iri(NS.rdf + "first"), iri(model.concepts[mid] ? conceptRes(model, mid) : collectionRes(model, mid)));
         if (prev) add(prev, iri(NS.rdf + "rest"), node); else head = node;
         prev = node;
       });
@@ -1014,6 +1017,8 @@ function autofix(model, kind){
       const norm = l => (l.val || "").trim().toLowerCase() + "@" + (l.lang || "");
       const prefSet = new Set((c.pref || []).filter(l => l.val).map(norm));
       for (const f of ["alt", "hidden"]){ const before = (c[f] || []).length; c[f] = (c[f] || []).filter(l => !prefSet.has(norm(l))); n += before - c[f].length; }
+      const altSet = new Set((c.alt || []).filter(l => l.val).map(norm));
+      { const before = (c.hidden || []).length; c.hidden = (c.hidden || []).filter(l => !altSet.has(norm(l))); n += before - c.hidden.length; }
     }
   }
   return n;
@@ -1038,10 +1043,33 @@ function validate(model){
     push("warning", "placeholderNamespace", "Placeholder namespace",
       `The scheme still uses the reserved example.org placeholder base (${model.base}). Set your own namespace in Build → Concept scheme settings before publishing — every concept and label URI depends on it.`);
 
+  // resource URIs as the exporter emits them, for the class-disjointness checks
+  const uriOfConcept = id => (C[id] && C[id].uri) || conceptUri(model, id);
+  const schemeUri = (model.scheme && model.scheme.uri) || (model.base || "").replace(/[#/]$/, "");
+  const uriToId = new Map(); for (const id of ids) uriToId.set(uriOfConcept(id), id);
+  const collectionUris = new Map(); // uri -> collection id
+  for (const cid in (model.collections || {})) collectionUris.set(collectionRes(model, cid), cid);
+
+  // class disjointness (scheme side): skos:Collection is disjoint with skos:ConceptScheme
+  if (collectionUris.has(schemeUri))
+    push("error", "schemeIsCollection", "Scheme is also a collection",
+      `The concept scheme <${schemeUri}> is also declared as collection "${collectionUris.get(schemeUri)}". SKOS declares skos:Collection and skos:ConceptScheme disjoint.`);
+
   // label index for ambiguity + overlap
   const prefIndex = new Map(); // "val@lang" -> [ids]
   for (const id of ids){
     const c = C[id];
+    const cUri = uriOfConcept(id);
+
+    // class disjointness: skos:ConceptScheme is disjoint with skos:Concept
+    if (cUri === schemeUri)
+      push("error", "conceptIsScheme", "Concept is also the concept scheme",
+        `<${cUri}> is both a skos:Concept and the skos:ConceptScheme. SKOS declares the two classes disjoint — give the scheme its own URI.`, id);
+
+    // class disjointness (concept side): skos:Collection is disjoint with skos:Concept
+    if (collectionUris.has(cUri))
+      push("error", "conceptIsCollection", "Concept is also a collection",
+        `<${cUri}> is both a skos:Concept and skos:Collection "${collectionUris.get(cUri)}". SKOS declares the two classes disjoint — a grouping belongs in a collection, a term in a concept, never both under one URI.`, id);
     // 1 missing prefLabel
     const prefs = (c.pref || []).filter(l => l.val && l.val.trim());
     if (prefs.length === 0) push("error", "missingPrefLabel", "Missing preferred label",
@@ -1068,15 +1096,22 @@ function validate(model){
         `A ${kind} has no language tag.`, id);
     }
 
-    // 4 overlapping labels (pref vs alt/hidden, alt vs hidden) within a concept
+    // 4 overlapping labels (SKOS: prefLabel, altLabel and hiddenLabel are pairwise
+    // disjoint). 
     const norm = l => (l.val || "").trim().toLowerCase() + "@" + (l.lang || "");
     const prefSet = new Set(prefs.map(norm));
+    const altSet = new Set((c.alt || []).filter(l => l.val && l.val.trim()).map(norm));
     for (const l of (c.alt || [])) if (prefSet.has(norm(l)))
-      push("warning", "overlapLabel", "Overlapping labels",
-        `"${l.val}" is both a preferred and alternative label. SKOS labels should be disjoint.`, id);
-    for (const l of (c.hidden || [])) if (prefSet.has(norm(l)))
-      push("warning", "overlapLabel", "Overlapping labels",
-        `"${l.val}" is both a preferred and hidden label.`, id);
+      push("error", "overlapLabel", "Overlapping labels",
+        `"${l.val}" is both a preferred and alternative label. SKOS requires prefLabel, altLabel and hiddenLabel to be pairwise disjoint.`, id);
+    for (const l of (c.hidden || [])){
+      if (prefSet.has(norm(l)))
+        push("error", "overlapLabel", "Overlapping labels",
+          `"${l.val}" is both a preferred and hidden label. SKOS requires prefLabel, altLabel and hiddenLabel to be pairwise disjoint.`, id);
+      else if (altSet.has(norm(l)))
+        push("error", "overlapLabel", "Overlapping labels",
+          `"${l.val}" is both an alternative and hidden label. SKOS requires prefLabel, altLabel and hiddenLabel to be pairwise disjoint.`, id);
+    }
 
     for (const l of prefs){ const key = norm(l); if (!prefIndex.has(key)) prefIndex.set(key, []); prefIndex.get(key).push(id); }
 
@@ -1127,6 +1162,19 @@ function validate(model){
       `skos:broader points to unknown concept "${p}".`, id);
     for (const r of (c.related || [])) if (!C[r]) push("error", "danglingRelated", "Dangling related",
       `skos:related points to unknown concept "${r}".`, id);
+
+    // mapping properties clash: skos:exactMatch is disjoint with skos:broadMatch and skos:relatedMatch.
+    for (const u of (c.exactMatch || [])){
+      for (const mf of ["broadMatch", "narrowMatch", "relatedMatch"]){
+        if ((c[mf] || []).includes(u))
+          push("error", "mappingClash", "Conflicting mapping properties",
+            `skos:exactMatch and skos:${mf} both point at <${u}>. SKOS declares exactMatch disjoint with broadMatch, narrowMatch and relatedMatch — keep one.`, id);
+        const oid = uriToId.get(u);
+        if (oid && oid !== id && (C[oid][mf] || []).includes(cUri))
+          push("error", "mappingClash", "Conflicting mapping properties",
+            `skos:exactMatch to ${oid}, while ${oid} declares skos:${mf} back to this concept. SKOS declares exactMatch symmetric and disjoint with broadMatch, narrowMatch and relatedMatch.`, id);
+      }
+    }
 
     // mapping targets that are metadata-vocabulary terms, not concepts (#62):
     // skos:*Match aligns concepts with concepts — pointing one at a property or
@@ -1643,6 +1691,7 @@ function triplesToModel(triples, prefixes){
     for (const uri in collTypes){
       const cid = localOf(uri);
       const col = { id:cid, label:[], note:[], changeNote:[], ordered:!!collTypes[uri], members:[] };
+      if (!uri.startsWith(base)) col.uri = uri;   // foreign namespace — preserve identity (as concepts do)
       const memberList = triples.find(t => t.p.t==="iri" && t.s.v===uri && t.p.v===P+"memberList");
       const orderedMembers = memberList ? walkList(memberList.o) : null;
       for (const t of triples){ if (t.p.t!=="iri" || t.s.v!==uri) continue;
@@ -2116,6 +2165,6 @@ function termStr(t){
   return s;
 }
 
-root.Core = { NS, iri, lit, termId, emptyConcept, conceptUri, conceptRes, xlLabelUri, buildTriples, toTurtle, toRdfXml, toJsonLd, toCsv, toMarkdown, toChangelog, toRdfJson, toAuditCsv, validate, autofix, parseTurtle, parseTriples, parseRdfXml, triplesToModel, sparql, termStr, safeLocal, parseCsvText, csvToModel, gridToModel, gridToCsv, looksLikeCsv, parseXlsx, csvTemplate, modelToGrid, toXlsx, ISO_BROADER, ISO_INVERSE, ISO_ENTAILS_SKOS };
+root.Core = { NS, iri, lit, termId, emptyConcept, conceptUri, conceptRes, collectionRes, xlLabelUri, buildTriples, toTurtle, toRdfXml, toJsonLd, toCsv, toMarkdown, toChangelog, toRdfJson, toAuditCsv, validate, autofix, parseTurtle, parseTriples, parseRdfXml, triplesToModel, sparql, termStr, safeLocal, parseCsvText, csvToModel, gridToModel, gridToCsv, looksLikeCsv, parseXlsx, csvTemplate, modelToGrid, toXlsx, ISO_BROADER, ISO_INVERSE, ISO_ENTAILS_SKOS };
 
 })(typeof window !== "undefined" ? window : this);
