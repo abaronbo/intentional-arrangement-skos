@@ -3155,7 +3155,11 @@ const CHECK_DOC={
   multiPrefLabel:"SKOS S14: a resource has no more than one prefLabel per language tag.",
   emptyLabel:"Labels must not be empty.", missingLang:"Labels should carry an xml:lang tag (qSKOS: Omitted/Invalid Language Tags).",
   badLang:"Language tags should be well-formed BCP-47.", noteNoLang:"Documentation literals should be language-tagged.",
-  overlapLabel:"qSKOS Overlapping/Disjoint Labels: pref, alt and hidden label sets should be disjoint.",
+  overlapLabel:"qSKOS Overlapping/Disjoint Labels: pref, alt and hidden label sets are pairwise disjoint.",
+  conceptIsScheme:"skos:Concept and skos:ConceptScheme are disjoint classes — one URI cannot be both.",
+  conceptIsCollection:"skos:Collection is disjoint with skos:Concept.",
+  schemeIsCollection:"skos:Collection is disjoint with skos:ConceptScheme.",
+  mappingClash:"skos:exactMatch is disjoint with broadMatch, narrowMatch and relatedMatch.",
   ambiguousPref:"qSKOS Ambiguously Labeled: a preferred label used by several concepts is ambiguous.",
   undocumented:"qSKOS Undocumented Concepts: concept lacks any definition or scope note.",
   orphan:"qSKOS Orphan Concepts: concept has no hierarchical or associative link.",
@@ -3271,7 +3275,8 @@ function renderValidation(){
 function renderCheckInfo(){
   $('#checkInfo').innerHTML="<b>qSKOS checks run:</b> "+Object.values({
     a:"missing/duplicate preferred labels",b:"language tags",c:"label disjointness &amp; ambiguity",d:"undocumented concepts",
-    e:"orphans",f:"cyclic hierarchy",g:"related/broader clashes (S27)",h:"hierarchical redundancy",i:"disconnected clusters",j:"valueless associations"
+    e:"orphans",f:"cyclic hierarchy",g:"related/broader clashes (S27)",h:"hierarchical redundancy",i:"disconnected clusters",j:"valueless associations",
+    k:"concept/scheme/collection disjointness",l:"exactMatch vs broad/narrow/relatedMatch"
   }).join(" · ");
 }
 function jumpToConcept(id){
