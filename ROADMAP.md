@@ -8,6 +8,9 @@ Legend: ✅ Shipped · 🚧 In progress · 🔜 Next · 💡 Planned
 
 ## ✅ Recently shipped
 
+### Expanded SKOS integrity checks (v0.18.11, #102)
+- The Validate tab now covers more of the SKOS Reference: **class disjointness** — a URI can't be both a `skos:Concept` and the `skos:ConceptScheme` (S9) or a `skos:Collection` (S37) — **alt-vs-hidden label disjointness** (S13, alongside the existing pref checks), and **mapping clash** — `skos:exactMatch` conflicting with `broadMatch`/`narrowMatch`/`relatedMatch` to the same target (S46), including the symmetric reverse direction for same-vocabulary targets. Imported collections from a foreign namespace now keep their original URI on export (round-trip parity with concepts). Contributed by @abaronbo. Label disjointness is compared per *exact literal* (case-sensitive per S13), so a legitimate casing variant like `altLabel` "hound" / `hiddenLabel` "Hound" is not flagged and the auto-fix never deletes it.
+
 ### Fix: SKOS-XL editor threw on every label (v0.18.10)
 - With SKOS-XL enabled, the concept editor referenced `LABEL_FIELDS` — a constant that lives inside `core.js`'s closure and isn't in scope in the page — so rendering any label with a value threw a `ReferenceError`. Every concept showed "Couldn't render Preferred/Alternative labels" (empty Hidden labels didn't iterate, so they looked fine). Replaced with an inline `["pref","alt","hidden"]` check. Plain-SKOS mode was unaffected, which is why it slipped past earlier tests.
 

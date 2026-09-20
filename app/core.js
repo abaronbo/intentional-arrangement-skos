@@ -1014,7 +1014,9 @@ function autofix(model, kind){
       if (hasNar || (c.related || []).length){ c.top = true; n++; } }
   } else if (kind === "overlap"){
     for (const id of ids){ const c = C[id];
-      const norm = l => (l.val || "").trim().toLowerCase() + "@" + (l.lang || "");
+      // Exact-literal comparison (S13): only remove a truly duplicate label, never
+      // a legal case/whitespace variant (e.g. keep hidden "Hound" alongside alt "hound").
+      const norm = l => (l.val || "").trim() + "@" + (l.lang || "");
       const prefSet = new Set((c.pref || []).filter(l => l.val).map(norm));
       for (const f of ["alt", "hidden"]){ const before = (c[f] || []).length; c[f] = (c[f] || []).filter(l => !prefSet.has(norm(l))); n += before - c[f].length; }
       const altSet = new Set((c.alt || []).filter(l => l.val).map(norm));
@@ -1096,19 +1098,23 @@ function validate(model){
         `A ${kind} has no language tag.`, id);
     }
 
-    // 4 overlapping labels (SKOS: prefLabel, altLabel and hiddenLabel are pairwise
-    // disjoint). 
-    const norm = l => (l.val || "").trim().toLowerCase() + "@" + (l.lang || "");
-    const prefSet = new Set(prefs.map(norm));
-    const altSet = new Set((c.alt || []).filter(l => l.val && l.val.trim()).map(norm));
-    for (const l of (c.alt || [])) if (prefSet.has(norm(l)))
+    // 4 overlapping labels — SKOS S13: prefLabel, altLabel and hiddenLabel are
+    // pairwise disjoint. Disjointness is per EXACT literal (same lexical form AND
+    // language tag), so compare case-sensitively: "hound"@en (alt) and "Hound"@en
+    // (hidden) are DIFFERENT literals and perfectly legal — only the identical
+    // string under two label properties violates S13.
+    const dnorm = l => (l.val || "").trim() + "@" + (l.lang || "");                 // case-sensitive: S13 disjointness (exact literal)
+    const norm  = l => (l.val || "").trim().toLowerCase() + "@" + (l.lang || "");   // case-insensitive: cross-concept ambiguity only
+    const prefSet = new Set(prefs.map(dnorm));
+    const altSet = new Set((c.alt || []).filter(l => l.val && l.val.trim()).map(dnorm));
+    for (const l of (c.alt || [])) if (prefSet.has(dnorm(l)))
       push("error", "overlapLabel", "Overlapping labels",
         `"${l.val}" is both a preferred and alternative label. SKOS requires prefLabel, altLabel and hiddenLabel to be pairwise disjoint.`, id);
     for (const l of (c.hidden || [])){
-      if (prefSet.has(norm(l)))
+      if (prefSet.has(dnorm(l)))
         push("error", "overlapLabel", "Overlapping labels",
           `"${l.val}" is both a preferred and hidden label. SKOS requires prefLabel, altLabel and hiddenLabel to be pairwise disjoint.`, id);
-      else if (altSet.has(norm(l)))
+      else if (altSet.has(dnorm(l)))
         push("error", "overlapLabel", "Overlapping labels",
           `"${l.val}" is both an alternative and hidden label. SKOS requires prefLabel, altLabel and hiddenLabel to be pairwise disjoint.`, id);
     }
