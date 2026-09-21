@@ -4091,7 +4091,7 @@ $('#proposeSubmit').onclick=()=>{
   model.proposals.push({ id:"prop"+nowTs().toString(36)+Math.random().toString(36).slice(2,5), term, parentId:$('#pParent').value||null,
     definition:$('#pDef').value.trim(), altLabels:syn, scopeNote:$('#pScope').value.trim(), artifacts:arts,
     submitter:$('#pSubmitter').value.trim(), rationale:$('#pRationale').value.trim(), status:"pending", created:nowTs() });
-  save(); updateProposalPill(); $('#proposeModal').classList.remove('show');
+  save(); updateProposalPill(); renderProposals(); $('#proposeModal').classList.remove('show');
   toast("Proposal submitted for review");
 };
 
