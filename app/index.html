@@ -84,12 +84,16 @@
   details.scheme>summary .chev{transition:transform .15s}
   details.scheme[open]>summary .chev{transform:rotate(90deg)}
   .scheme-idstyle{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;padding:6px 13px 12px;border-bottom:1px solid var(--border-soft)}
-  .isb-left{display:flex;flex-direction:column;gap:6px}
+  .isb-left{display:flex;flex-direction:column;gap:6px;min-width:0;flex:1 1 240px}
+  .isb-actions{display:flex;flex-direction:column;gap:6px;align-items:stretch;flex:0 0 auto}
+  .isb-actions .btn{white-space:nowrap}
   .isb-h{font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.04em}
   .scheme-idstyle .subtle{max-width:52ch}
   .scheme-grid{padding:12px 13px 14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px 14px}
-  .fld{display:flex;flex-direction:column;gap:3px}
-  .fld label{font-size:11px;font-weight:600;color:var(--faint);text-transform:uppercase;letter-spacing:.04em}
+  .fld{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .fld label{font-size:11px;font-weight:600;color:var(--faint);text-transform:uppercase;letter-spacing:.04em;overflow-wrap:anywhere}
+  .fld .fldhint{font-size:10.5px;line-height:1.35;color:var(--faint);text-transform:none;letter-spacing:0;overflow-wrap:anywhere;margin-top:1px}
+  .fld .fldhint code{font-family:var(--mono);font-size:10px}
   .fld input,.fld select,.fld textarea{font:inherit;color:var(--text);background:var(--surface-2);border:1px solid var(--border);border-radius:7px;padding:6px 9px;width:100%}
   .fld textarea{resize:vertical;min-height:38px}
 
@@ -374,7 +378,10 @@
         </div>
         <div class="subtle" id="idStyleHint"></div>
       </div>
-      <button class="btn sm" id="btnAssignUuids">Assign UUIDs to all terms</button>
+      <div class="isb-actions">
+        <button class="btn sm" id="btnAssignUuids" title="Mint a fresh RFC 9562 UUIDv7 for every concept (new identities; repairs all links)">Assign UUIDs to all terms</button>
+        <button class="btn sm" id="btnRecanonUuids" title="Reformat existing UUIDs into canonical dashed lowercase, keeping each value (identity preserved)">Re-canonicalize existing UUIDs</button>
+      </div>
     </div>
     <div class="scheme-idstyle" id="labelStyleBox">
       <div class="isb-left">
@@ -1804,6 +1811,37 @@ async function assignAllUuids(){
   model.idStyle="uuid"; save(); renderScheme(); renderTree(); if(selected)renderEditor(); afterChange();
   toast("Assigned UUIDs to "+n+" term"+(n===1?"":"s"));
 }
+// Reformat a URI's trailing segment to canonical dashed UUID when it IS a UUID (old
+// dashless or mixed-case), preserving the namespace and everything before it. Non-UUID
+// locals (readable slugs, "-xl-pref-1" label stems) are returned unchanged.
+function recanonUri(u){ if(!u) return u; const m=/^(.*[\/#])([^\/#]+)$/.exec(String(u)); const pre=m?m[1]:"", seg=m?m[2]:String(u); const cu=Core.canonUuid(seg); return cu?pre+cu:u; }
+// Non-destructive re-canonicalize: keep each UUID's VALUE but rewrite it into the RFC 9562
+// canonical dashed lowercase form, through every concept id, its uri override, its SKOS-XL
+// label URIs, and every collection id. Identity is preserved (a dashless UUID becomes its
+// exact dashed equivalent), unlike "Assign UUIDs" which mints fresh ids.
+async function recanonicalizeUuids(){
+  // Count what would change so we can report honestly (and no-op cleanly when already canonical).
+  let concepts=0, labels=0, uris=0, cols=0;
+  for(const id of model.order.slice()){ const cu=Core.canonUuid(id); if(cu&&cu!==id) concepts++; }
+  for(const id in model.concepts){ const c=model.concepts[id];
+    if(c.uri && recanonUri(c.uri)!==c.uri) uris++;
+    for(const k of ["pref","alt","hidden"]) (c[k]||[]).forEach(L=>{ if(L&&L.uri && recanonUri(L.uri)!==L.uri) labels++; }); }
+  for(const k in (model.collections||{})){ const cu=Core.canonUuid(k); if(cu&&cu!==k) cols++; }
+  const total=concepts+labels+uris+cols;
+  if(!total){ toast("All identifiers are already in canonical dashed form"); return; }
+  const bits=[]; if(concepts)bits.push(concepts+" concept id"+(concepts===1?"":"s")); if(cols)bits.push(cols+" collection id"+(cols===1?"":"s")); if(labels)bits.push(labels+" label URI"+(labels===1?"":"s")); if(uris)bits.push(uris+" URI override"+(uris===1?"":"s"));
+  if(!await askConfirm(`Reformat ${bits.join(", ")} into the RFC 9562 canonical dashed form? Each UUID keeps its value — only the spelling changes (dashless → dashed, lowercase) — and every internal link is updated.`,"Re-canonicalize UUIDs")) return;
+  // 1) concept ids (doRename remaps hierarchy, related, collection membership, proposals, graph, glossary)
+  for(const id of model.order.slice()){ const cu=Core.canonUuid(id); if(cu&&cu!==id&&model.concepts[id]&&!model.concepts[cu]) doRename(id, cu); }
+  // 2) collection ids (renameCollection remaps members and nested-collection refs)
+  for(const k of Object.keys(model.collections||{})){ const cu=Core.canonUuid(k); if(cu&&cu!==k&&model.collections[k]&&!localNameTaken(cu)){ if(model.graph&&model.graph.pos&&model.graph.pos["C:"+k]){ model.graph.pos["C:"+cu]=model.graph.pos["C:"+k]; delete model.graph.pos["C:"+k]; } renameCollection(k, cu); } }
+  // 3) per-concept uri override + SKOS-XL label URIs (values on the concept object)
+  for(const id in model.concepts){ const c=model.concepts[id];
+    if(c.uri) c.uri=recanonUri(c.uri);
+    for(const k of ["pref","alt","hidden"]) (c[k]||[]).forEach(L=>{ if(L&&L.uri) L.uri=recanonUri(L.uri); }); }
+  save(); renderScheme(); renderTree(); if(typeof renderCollections==="function") renderCollections(); if(selected)renderEditor(); afterChange();
+  toast("Re-canonicalized "+total+" identifier"+(total===1?"":"s"));
+}
 function label(id){ const c=model.concepts[id]; const p=c&&c.pref&&c.pref.find(l=>l.val); return p?p.val:""; }
 
 // #16 — how node text renders in the tree and relationship pickers (view-only; never
@@ -2445,20 +2483,23 @@ function focusLast(field){ const els=$$('#editor .rowline .val[data-field="'+fie
 function updateTreeLabel(){ const row=$$('.trow.sel .tlabel')[0]; if(row){ const lv=nodeText(selected); row.innerHTML=nodeUnlabeled(selected)?'<span class="unl">'+escapeHtml(lv)+'</span>':escapeHtml(lv); } }
 
 // ---------- scheme editor ----------
+// [key, label (short, shown as the caption), type, hint (optional helper shown under the field)]
 const SCHEME_FIELDS=[
-  ["base","Base namespace (URI, ends with # or /)","text"],["prefix","Namespace prefix (blank = “:”)","text"],["uri","Concept scheme URI","text"],
-  ["agentsBase","Agents namespace (optional — prov:Person/Organization/SoftwareAgent mint here instead of the term namespace; # or / form)","text"],
-  ["docsBase","Documents namespace (optional — foaf:Document sources mint here; blank = same as the agents namespace)","text"],
+  ["base","Base namespace","text","The URI concepts hang off. End it with # or /."],
+  ["prefix","Namespace prefix","text","Turtle prefix. Blank means the default “:”."],
+  ["uri","Concept scheme URI","text"],
+  ["agentsBase","Agents namespace","text","Optional. prov:Person / Organization / SoftwareAgent mint here instead of the term namespace (# or / form)."],
+  ["docsBase","Documents namespace","text","Optional. foaf:Document sources mint here. Blank = same as the agents namespace."],
   ["defaultLang","Default language","lang"],
   ["title","dcterms:title","text"],["description","dcterms:description","area"],
   ["creator","dcterms:creator","text"],["publisher","dcterms:publisher","text"],
-  ["created","dcterms:created (date)","date"],["issued","dcterms:issued (date published)","date"],["modified","dcterms:modified (date)","date"],["rights","dcterms:rights","text"],
-  ["license","dcterms:license — a license URI, e.g. https://creativecommons.org/licenses/by/4.0/","text"],
-  ["version","owl:versionInfo — e.g. 1.0.0","text"],
+  ["created","dcterms:created","date","Date created."],["issued","dcterms:issued","date","Date published."],["modified","dcterms:modified","date","Last modified."],["rights","dcterms:rights","text"],
+  ["license","dcterms:license","text","A license URI, e.g. https://creativecommons.org/licenses/by/4.0/"],
+  ["version","owl:versionInfo","text","e.g. 1.0.0"],
 ];
 function renderScheme(){
   const g=$('#schemeGrid'); g.innerHTML="";
-  for(const [key,lbl,type] of SCHEME_FIELDS){
+  for(const [key,lbl,type,hint] of SCHEME_FIELDS){
     const f=document.createElement("div"); f.className="fld";
     const l=document.createElement("label"); l.textContent=lbl;
     if(key==="title"||key==="description"){ const lc=document.createElement("span"); lc.className="subtle";
@@ -2481,13 +2522,16 @@ function renderScheme(){
           if(n) toast("Namespace changed — rebased "+n+" dependent URI"+(n===1?"":"s")+" to the new base"); } };
     }
     if(key==="license") attachUriGuard(el, v=>{ model.scheme.license=v; save(); });
-    f.appendChild(el); g.appendChild(f);
+    f.appendChild(el);
+    if(hint){ const h=document.createElement("div"); h.className="fldhint"; h.textContent=hint; f.appendChild(h); }
+    g.appendChild(f);
   }
   // identifier style controls
   const style=model.idStyle||"text";
   $$('#idStyle input').forEach(r=>{ r.checked=r.value===style; r.onchange=()=>{ if(r.checked){ model.idStyle=r.value; save(); updateIdStyleHint(); } }; });
   updateIdStyleHint();
   $('#btnAssignUuids').onclick=assignAllUuids;
+  { const rb=$('#btnRecanonUuids'); if(rb) rb.onclick=recanonicalizeUuids; }
   // label style (plain SKOS vs SKOS-XL)
   const ls=model.xlLabels?"xl":"plain";
   $$('#labelStyle input').forEach(r=>{ r.checked=r.value===ls; r.onchange=()=>{ if(r.checked){ setLabelStyle(r.value); } }; });
