@@ -68,6 +68,18 @@ function emptyConcept(id){
 function safeLocal(s){
   return String(s).replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "x";
 }
+// RFC 9562 UUID canonicalizer. Accepts a 32-hex string or a dashed UUID in any case
+// (optionally as a urn:uuid: / trailing path segment); returns the canonical lowercase
+// 8-4-4-4-12 dashed form, or null if the input is not a 32-hex UUID. Hex + "-" are all
+// RFC 3986/3987 unreserved characters, so the result is a valid URI/IRI local name.
+function canonUuid(s){
+  let v = String(s == null ? "" : s).trim();
+  const seg = v.split(/[\/#:]/).filter(Boolean).pop() || v;   // tolerate urn:uuid: / path forms
+  const hex = seg.replace(/-/g, "");
+  if (!/^[0-9a-fA-F]{32}$/.test(hex)) return null;
+  const l = hex.toLowerCase();
+  return l.slice(0,8)+"-"+l.slice(8,12)+"-"+l.slice(12,16)+"-"+l.slice(16,20)+"-"+l.slice(20);
+}
 function xlLabelUri(model, cid, kind, index, lang){
   return model.base + cid + "-xl-" + kind + "-" + (lang || "und") + "-" + index;
 }
@@ -624,8 +636,9 @@ function gridToModel(grid, opts){
     const r = grid[i];
     if (!r || r.every(x => String(x).trim() === "")) continue;
     let rawId = cell(r, "id").trim().replace(/[^A-Za-z0-9_.-]/g, "-").replace(/^-+|-+$/g, "");
+    rawId = canonUuid(rawId) || rawId;   // normalize a pasted UUID id to RFC 9562 canonical dashed lowercase
     const prefVals = splitText(cell(r, "pref"));
-    if (!rawId){ const uri = cell(r, "uri").trim(); if (uri) rawId = (uri.split(/[\/#]/).filter(Boolean).pop() || "").replace(/[^A-Za-z0-9_.-]/g, "-"); }
+    if (!rawId){ const uri = cell(r, "uri").trim(); if (uri) rawId = canonUuid(uri) || (uri.split(/[\/#]/).filter(Boolean).pop() || "").replace(/[^A-Za-z0-9_.-]/g, "-"); }
     if (!rawId) rawId = slug(prefVals[0] || "concept");
     const id = uniqueLocalIn(model.concepts, rawId);
     const cpt = emptyConcept(id);
@@ -2171,6 +2184,6 @@ function termStr(t){
   return s;
 }
 
-root.Core = { NS, iri, lit, termId, emptyConcept, conceptUri, conceptRes, collectionRes, xlLabelUri, buildTriples, toTurtle, toRdfXml, toJsonLd, toCsv, toMarkdown, toChangelog, toRdfJson, toAuditCsv, validate, autofix, parseTurtle, parseTriples, parseRdfXml, triplesToModel, sparql, termStr, safeLocal, parseCsvText, csvToModel, gridToModel, gridToCsv, looksLikeCsv, parseXlsx, csvTemplate, modelToGrid, toXlsx, ISO_BROADER, ISO_INVERSE, ISO_ENTAILS_SKOS };
+root.Core = { NS, iri, lit, termId, emptyConcept, conceptUri, conceptRes, collectionRes, xlLabelUri, canonUuid, buildTriples, toTurtle, toRdfXml, toJsonLd, toCsv, toMarkdown, toChangelog, toRdfJson, toAuditCsv, validate, autofix, parseTurtle, parseTriples, parseRdfXml, triplesToModel, sparql, termStr, safeLocal, parseCsvText, csvToModel, gridToModel, gridToCsv, looksLikeCsv, parseXlsx, csvTemplate, modelToGrid, toXlsx, ISO_BROADER, ISO_INVERSE, ISO_ENTAILS_SKOS };
 
 })(typeof window !== "undefined" ? window : this);

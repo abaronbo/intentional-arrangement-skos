@@ -40,7 +40,7 @@ The Build tab is where the work happens. The tree of concepts sits on the left; 
 - The **identifier** (the URI fragment) is the concept's identity. It stays fixed even when you rename the label.
 - The **preferred label** is what people read. Changing it does *not* change the identifier.
 
-Because they can drift apart, the editor gives you help: **↦ from label** sets the identifier from the current preferred label, **⟳ UUID** assigns an opaque, stable identifier, and a warning appears if two concepts end up with near-identical identifiers (for example `MonthJournal` and `Monthjournal`, which are two different concepts).
+Because they can drift apart, the editor gives you help: **↦ from label** sets the identifier from the current preferred label, **⟳ UUID** assigns an opaque, stable **RFC 9562 UUIDv7** identifier (time-ordered, canonical dashed lowercase — e.g. `01a0cf18-71a3-7e9e-843c-90f92ef5dfac`), and a warning appears if two concepts end up with near-identical identifiers (for example `MonthJournal` and `Monthjournal`, which are two different concepts).
 
 **Labels.**
 
@@ -203,7 +203,7 @@ After an import, a short summary reports the concept count and top concepts, and
 
 ## Scheme metadata
 
-Under **Concept scheme, identifiers & Dublin Core metadata** you set the vocabulary's own record: title, description, creator, publisher, the created/published/modified dates, rights, a **license URI** (`dcterms:license` — e.g. a Creative Commons license; complements the free-text rights statement), a **version** (`owl:versionInfo`), and language, plus the base namespace and whether identifiers are readable or UUIDs.
+Under **Concept scheme, identifiers & Dublin Core metadata** you set the vocabulary's own record: title, description, creator, publisher, the created/published/modified dates, rights, a **license URI** (`dcterms:license` — e.g. a Creative Commons license; complements the free-text rights statement), a **version** (`owl:versionInfo`), and language, plus the base namespace and whether identifiers are readable slugs or **RFC 9562 UUIDv7** (canonical dashed lowercase; the hex-and-dash form is valid in a URI/IRI per RFC 3986/3987, so `base + uuid` resolves cleanly).
 
 Two optional annex namespaces keep provenance resources out of your term space — they are metadata *about* the vocabulary, not members of it. The **Agents namespace** mints `prov:Person` / `prov:Organization` / `prov:SoftwareAgent` URIs (e.g. `https://example.org/agents#`); the **Documents namespace** mints `foaf:Document` sources (e.g. `https://example.org/resources#`), and falls back to the agents namespace when blank. Both are declared in every export (`@prefix agents:` / `@prefix resources:` in Turtle, matching `xmlns:` declarations in RDF/XML and entries in the JSON-LD context) and round-trip losslessly. Both blank means everything shares the concept namespace, as before; an explicit identity URI on an agent or document (ORCID, DOI, homepage) always wins either way. Exports also annotate the scheme with `vann:preferredNamespacePrefix` and `vann:preferredNamespaceUri`, taken automatically from your namespace settings. This is also where the **Label style** (plain SKOS vs [SKOS-XL](#a-concepts-fields)) lives, and a one-click **Assign UUIDs to all terms**. This metadata travels with every export.
 

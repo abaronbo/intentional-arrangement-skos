@@ -370,7 +370,7 @@
         <div class="isb-h">Concept identifiers</div>
         <div class="radios" id="idStyle">
           <label><input type="radio" name="idstyle" value="text"><span>Readable text names</span></label>
-          <label><input type="radio" name="idstyle" value="uuid"><span>Auto UUID (32-char)</span></label>
+          <label><input type="radio" name="idstyle" value="uuid"><span>Auto UUID (RFC 9562 v7)</span></label>
         </div>
         <div class="subtle" id="idStyleHint"></div>
       </div>
@@ -1542,22 +1542,32 @@ function newModel(){
     scheme:{ uri:"http://example.org/my-taxonomy", title:"My Taxonomy", description:"", creator:"", publisher:"", created:todayISO(), issued:"", modified:"", rights:"", license:"", version:"", lang:"en" },
     concepts:{}, order:[], collections:{}, documents:{}, agents:{} };
 }
-// 32-char hex UUID (dashes stripped), guaranteed unique within the model
-function genUuid32(){
-  let u="";
-  try{ if(typeof crypto!=="undefined"&&crypto.randomUUID) u=crypto.randomUUID().replace(/-/g,""); }catch(e){}
-  if(!u){ const hex="0123456789abcdef";
-    try{ const a=new Uint8Array(16); crypto.getRandomValues(a); for(const b of a) u+=hex[b>>4]+hex[b&15]; }
-    catch(e){ for(let i=0;i<32;i++) u+=hex[Math.floor(Math.random()*16)]; } }
-  return u;
+// RFC 9562 UUIDv7 — time-ordered, canonical lowercase dashed form (8-4-4-4-12).
+// Hex + "-" are RFC 3986/3987 unreserved, so base+uuid is a valid URI/IRI local name;
+// the millisecond timestamp prefix makes ids sort by creation time (pairs with the changelog).
+function genUuid(){
+  const b=new Uint8Array(16);
+  try{ crypto.getRandomValues(b); }
+  catch(e){ for(let i=0;i<16;i++) b[i]=Math.floor(Math.random()*256); }
+  const ts=Date.now();
+  b[0]=Math.floor(ts/0x10000000000)&0xff;   // 48-bit big-endian unix_ts_ms
+  b[1]=Math.floor(ts/0x100000000)&0xff;
+  b[2]=Math.floor(ts/0x1000000)&0xff;
+  b[3]=Math.floor(ts/0x10000)&0xff;
+  b[4]=Math.floor(ts/0x100)&0xff;
+  b[5]=ts&0xff;
+  b[6]=(b[6]&0x0f)|0x70;   // version 7
+  b[8]=(b[8]&0x3f)|0x80;   // variant 10 (RFC 4122/9562)
+  const h=Array.from(b,x=>x.toString(16).padStart(2,"0"));
+  return h.slice(0,4).join("")+"-"+h.slice(4,6).join("")+"-"+h.slice(6,8).join("")+"-"+h.slice(8,10).join("")+"-"+h.slice(10,16).join("");
 }
-function uniqueUuid(){ let id=genUuid32(); while(model.concepts[id]) id=genUuid32(); return id; }
+function uniqueUuid(){ let id=genUuid(); while(model.concepts[id]) id=genUuid(); return id; }
 // SKOS-XL: each skosxl:Label is its own resource, so give it a stable identifier the
 // moment it's created (stored on the label) — a UUID when the scheme uses UUID ids, else
 // a readable, stable one. This survives reordering/edits, unlike an export-time pattern.
 function collectLabelUris(){ const s=new Set(); for(const id in model.concepts){ const c=model.concepts[id]; for(const k of ["pref","alt","hidden"]){ (c[k]||[]).forEach(L=>{ if(L.uri) s.add(L.uri); }); } } return s; }
 function mintLabelUri(cid, kind, used){ used=used||collectLabelUris();
-  if((model.idStyle||"text")==="uuid"){ let u; do{ u=model.base+genUuid32(); }while(used.has(u)||model.concepts[u.slice(model.base.length)]); used.add(u); return u; }
+  if((model.idStyle||"text")==="uuid"){ let u; do{ u=model.base+genUuid(); }while(used.has(u)||model.concepts[u.slice(model.base.length)]); used.add(u); return u; }
   const stem=model.base+cid+"-xl-"+kind; let u=stem+"-1", n=1; while(used.has(u)){ u=stem+"-"+(++n); } used.add(u); return u;
 }
 function ensureXlUris(){ if(!model.xlLabels) return false; const used=collectLabelUris(); let changed=false;
@@ -1789,7 +1799,7 @@ function renameConcept(oldId, newId){
 async function assignAllUuids(){
   const ids=model.order.slice(); const n=ids.length;
   if(!n){ model.idStyle="uuid"; save(); renderScheme(); toast("UUID mode on"); return; }
-  if(!await askConfirm(`Assign a fresh 32-character UUID to all ${n} term${n===1?"":"s"}? Preferred labels stay the same — only the identifiers/URIs change, and every internal link is updated.`,"Assign UUIDs")) return;
+  if(!await askConfirm(`Assign a fresh RFC 9562 UUIDv7 (dashed) to all ${n} term${n===1?"":"s"}? Preferred labels stay the same — only the identifiers/URIs change, and every internal link is updated.`,"Assign UUIDs")) return;
   for(const oldId of ids){ if(model.concepts[oldId]) doRename(oldId, uniqueUuid()); }
   model.idStyle="uuid"; save(); renderScheme(); renderTree(); if(selected)renderEditor(); afterChange();
   toast("Assigned UUIDs to "+n+" term"+(n===1?"":"s"));
@@ -2131,7 +2141,7 @@ function renderEditor(){
   // id + notation + top
   const idrow=document.createElement("div"); idrow.className="idrow";
   idrow.appendChild(fldInput("Local name (URI fragment)", selected, v=>{ const nn=renameConcept(selected,v); if(nn!==selected){ uri.textContent=Core.conceptUri(model,nn);} }, true));
-  const uuidBtn=document.createElement("button"); uuidBtn.className="btn sm"; uuidBtn.textContent="⟳ UUID"; uuidBtn.title="Assign a fresh 32-character UUID identifier"; uuidBtn.style.marginBottom="6px";
+  const uuidBtn=document.createElement("button"); uuidBtn.className="btn sm"; uuidBtn.textContent="⟳ UUID"; uuidBtn.title="Assign a fresh RFC 9562 UUIDv7 (dashed) identifier"; uuidBtn.style.marginBottom="6px";
   uuidBtn.onclick=()=>{ renameConcept(selected, uniqueUuid()); renderEditor(); toast("Assigned new UUID"); };
   idrow.appendChild(uuidBtn);
   const syncBtn=document.createElement("button"); syncBtn.className="btn sm"; syncBtn.textContent="↦ from label"; syncBtn.title="Set the identifier (URI) from the preferred label"; syncBtn.style.marginBottom="6px";
@@ -2519,7 +2529,7 @@ function updateXlUi(){
 if($('#xlChip')) $('#xlChip').onclick=()=>{ switchTab('build'); const sb=$('#schemeBox'); if(sb){ sb.open=true; renderScheme(); const lb=$('#labelStyleBox'); if(lb) lb.scrollIntoView({behavior:'smooth',block:'center'}); } };
 function updateIdStyleHint(){ const h=$('#idStyleHint'); if(!h) return;
   h.textContent=(model.idStyle==="uuid")
-    ? "New terms get an auto-generated 32-character identifier. Use “Assign UUIDs to all terms” to convert existing ones."
+    ? "New terms get an auto-generated RFC 9562 UUIDv7 identifier (time-ordered, dashed lowercase). Use “Assign UUIDs to all terms” to convert existing ones."
     : "New terms get a readable identifier derived from their label."; }
 
 // ---------- tabs ----------
@@ -4464,7 +4474,7 @@ function ontoQname(uri){
   return "<"+uri+">";
 }
 function ontoStrL(s){ return JSON.stringify(String(s))+"@"+(model.defaultLang||"en"); }
-function ontoUuid(){ let id=genUuid32(); while(model.onto.classes[id]||model.onto.props[id]) id=genUuid32(); return id; }
+function ontoUuid(){ let id=genUuid(); while(model.onto.classes[id]||model.onto.props[id]) id=genUuid(); return id; }
 function uniqueOntoId(base){ if((model.onto.idStyle||"text")==="uuid") return ontoUuid(); base=Core.safeLocal(base)||"Thing"; let id=base,n=1; while(model.onto.classes[id]||model.onto.props[id]) id=base+(++n); return id; }
 function ontoRename(kind,oldId,raw){
   let newId=Core.safeLocal(raw); if(!newId) return oldId; if(newId===oldId) return oldId;
@@ -5801,7 +5811,7 @@ function glossAddTerms(text){
 // caller persists and re-renders ONCE (so batch promotes don't rebuild the DOM N times).
 function promoteInto(m, t, parentId){
   m.concepts=m.concepts||{}; m.order=m.order||Object.keys(m.concepts);
-  const base=(m.idStyle==="uuid")?genUuid32():(slugId(t.term)||"Term");
+  const base=(m.idStyle==="uuid")?genUuid():(slugId(t.term)||"Term");
   const cid=uniqueLocalIn(m.concepts, base);
   const parent=(parentId && m.concepts[parentId])?parentId:null;
   const c=Core.emptyConcept(cid); c.pref=[{lang:m.defaultLang||"en",val:t.term}]; if(t.note) c.definition=[{lang:m.defaultLang||"en",val:t.note}];
