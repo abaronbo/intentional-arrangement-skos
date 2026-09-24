@@ -8,6 +8,9 @@ Legend: ✅ Shipped · 🚧 In progress · 🔜 Next · 💡 Planned
 
 ## ✅ Recently shipped
 
+### Large vocabularies load and navigate in milliseconds (v0.18.12, #105)
+- Importing and navigating a ~9,000-concept vocabulary (the reporter used the Dutch **IMBOR** thesaurus, 8,948 concepts) took tens of seconds because three core operations were **O(n²)**: the tree helpers `childrenOf`/`descCount` re-scanned every concept per rendered node; `selectConcept` rebuilt the entire tree on every click; and the Validate pass re-scanned all concepts to decide whether each one had narrower. All three are now **O(n)** — the tree builds a parent→children map and memoized subtree sizes once per render, selecting an already-visible node just moves the highlight instead of rebuilding, and validation precomputes the "has-narrower" set once. On a synthetic 9,000-concept vocabulary: tree render **5,305 ms → ~14 ms**, full validation **5,034 ms → ~50 ms**, navigate to a concept **5,114 ms → ~30 ms** — with identical output (same tree, same descendant counts, same 181 validation findings). Reported by @mickbaggen.
+
 ### Expanded SKOS integrity checks (v0.18.11, #102)
 - The Validate tab now covers more of the SKOS Reference: **class disjointness** — a URI can't be both a `skos:Concept` and the `skos:ConceptScheme` (S9) or a `skos:Collection` (S37) — **alt-vs-hidden label disjointness** (S13, alongside the existing pref checks), and **mapping clash** — `skos:exactMatch` conflicting with `broadMatch`/`narrowMatch`/`relatedMatch` to the same target (S46), including the symmetric reverse direction for same-vocabulary targets. Imported collections from a foreign namespace now keep their original URI on export (round-trip parity with concepts). Contributed by @abaronbo. Label disjointness is compared per *exact literal* (case-sensitive per S13), so a legitimate casing variant like `altLabel` "hound" / `hiddenLabel` "Hound" is not flagged and the auto-fix never deletes it.
 

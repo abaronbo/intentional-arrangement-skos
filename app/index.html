@@ -1889,10 +1889,29 @@ function hierParents(c){ return (c.broader||[]).concat(c.broaderGeneric||[],c.br
 function childrenOf(id){ return model.order.filter(x=>hierParents(model.concepts[x]).includes(id)); }
 function roots(){ return model.order.filter(x=>{ const c=model.concepts[x]; return c.top || !hierParents(c).some(b=>model.concepts[b]); }); }
 function descCount(id, seen){ seen=seen||new Set(); let n=0; for(const k of childrenOf(id)){ if(seen.has(k))continue; seen.add(k); n+=1+descCount(k,seen); } return n; }
+// ---- Fast tree indexes, rebuilt once per renderTree (was O(n²): childrenOf/descCount
+// each re-scanned all concepts per node, so a 9k-concept vocabulary took seconds per row).
+// _childMap: parent id → child ids (inverse of hierParents). _descMemo: memoized subtree size.
+let _childMap=null, _descMemo=null;
+function buildTreeMaps(){
+  _childMap=new Map();
+  for(const id of model.order){ const c=model.concepts[id]; if(!c) continue;
+    for(const p of hierParents(c)){ if(model.concepts[p]){ let a=_childMap.get(p); if(!a){ a=[]; _childMap.set(p,a); } a.push(id); } } }
+  _descMemo=new Map();
+}
+function childrenFast(id){ return (_childMap && _childMap.get(id)) || []; }
+function descCountFast(id){
+  if(!_descMemo) return descCount(id);
+  const inprog=new Set();
+  const go=x=>{ const memo=_descMemo.get(x); if(memo!==undefined) return memo; if(inprog.has(x)) return 0; inprog.add(x);
+    let n=0; for(const k of childrenFast(x)) n+=1+go(k); inprog.delete(x); _descMemo.set(x,n); return n; };
+  return go(id);
+}
 
 let treeFilter="";
 function renderTree(){
   const host=$('#tree'); host.innerHTML="";
+  buildTreeMaps();   // one O(n) pass; treeNode then reads child/descendant lookups instead of re-scanning
   $('#pillCount').textContent=model.order.length;
   let rootList=roots();
   if(treeFilter){
@@ -1920,13 +1939,14 @@ function renderTree(){
 }
 function treeNode(id, path){
   const c=model.concepts[id];
-  const kids=sortIds(childrenOf(id).filter(k=>!window._vis||window._vis.has(k)));
+  const kids=sortIds(childrenFast(id).filter(k=>!window._vis||window._vis.has(k)));
   const node=document.createElement("div");
   const row=document.createElement("div");
   const hasKids=kids.length>0;
   const cycle=path.has(id);
   const isOpen=openIds.has(id)||(treeFilter&&hasKids);
   row.className="trow"+(c.top?" top":"")+(id===selected?" sel":"")+(isOpen?" open":"")+(bulkMode&&bulkSel.has(id)?" bulksel":"");
+  row.dataset.cid=id;   // lets selectConcept move the highlight without rebuilding the tree
   row.tabIndex=0;
   if(bulkMode){ const cb=document.createElement("input"); cb.type="checkbox"; cb.className="tcheck"; cb.checked=bulkSel.has(id);
     cb.onclick=e=>e.stopPropagation();
@@ -1941,7 +1961,7 @@ function treeNode(id, path){
   const disp=nodeText(id); lab.innerHTML = nodeUnlabeled(id) ? '<span class="unl">'+escapeHtml(disp)+'</span>' : escapeHtml(disp);
   if(window._match&&window._match.has(id)) lab.classList.add('fmatch');   // a direct filter hit (ancestors shown but not highlighted)
   row.appendChild(lab);
-  if(hasKids){ const cc=document.createElement("span"); cc.className="tcount"; cc.textContent=descCount(id); row.appendChild(cc); }
+  if(hasKids){ const cc=document.createElement("span"); cc.className="tcount"; cc.textContent=descCountFast(id); row.appendChild(cc); }
   if(!bulkMode){ const acts=document.createElement("span"); acts.className="tacts";
     acts.appendChild(mkBtn("＋","Add child",e=>{e.stopPropagation();openIds.add(id);addConcept(id);}));
     acts.appendChild(mkBtn("⧉","Duplicate",e=>{e.stopPropagation();duplicateConcept(id);}));
@@ -1955,7 +1975,21 @@ function treeNode(id, path){
   return node;
 }
 function mkBtn(txt,title,fn,cls){ const b=document.createElement("button"); b.className="tbtn"+(cls?" "+cls:""); b.title=title; b.textContent=txt; b.onclick=fn; return b; }
-function selectConcept(id){ if(histBaseId&&histBaseId!==id&&model.concepts[histBaseId]) commitHistory(false); selected=id; $$('.trow.sel').forEach(r=>r.classList.remove('sel')); renderTree(); renderEditor(); }
+function selectConcept(id){
+  if(histBaseId&&histBaseId!==id&&model.concepts[histBaseId]) commitHistory(false);
+  selected=id;
+  // Open any collapsed ancestors so the row will be visible.
+  let opened=false; const guard=new Set(); let cur=hierParents(model.concepts[id]||{}).slice();
+  while(cur.length){ const p=cur.shift(); if(guard.has(p)||!model.concepts[p]) continue; guard.add(p);
+    if(!openIds.has(p)){ openIds.add(p); opened=true; } cur=cur.concat(hierParents(model.concepts[p])); }
+  // If the row is already on screen (the common case — clicking a visible node), just move the
+  // highlight instead of rebuilding the whole tree (which was O(n²) and dominated navigation).
+  const esc = window.CSS && CSS.escape ? CSS.escape(id) : id.replace(/["\\]/g,"\\$&");
+  const existing = !opened && document.querySelector('#tree .trow[data-cid="'+esc+'"]');
+  if(existing){ $$('#tree .trow.sel').forEach(r=>r.classList.remove('sel')); existing.classList.add('sel'); existing.scrollIntoView({block:"nearest"}); }
+  else renderTree();
+  renderEditor();
+}
 // #29: jump to a concept in the Build tree from a relationship chip or collection member —
 // expand its broader ancestors so it's visible, select it, and scroll it into view.
 function goToConcept(id){ if(!model.concepts[id]) return;

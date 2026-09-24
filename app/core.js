@@ -1065,6 +1065,13 @@ function validate(model){
   const collectionUris = new Map(); // uri -> collection id
   for (const cid in (model.collections || {})) collectionUris.set(collectionRes(model, cid), cid);
 
+  // Precompute, once (O(n)), the set of concepts that some other concept points to as a
+  // hierarchical parent — i.e. concepts that HAVE narrower. The per-concept orphan check
+  // used ids.some(...) here, making the whole validation O(n²) (seconds on ~9k concepts).
+  const _HIER_ALL = ["broader"].concat(ISO_BROADER);
+  const hasNarrowerSet = new Set();
+  for (const x of ids){ const cx = C[x]; for (const f of _HIER_ALL){ const arr = cx[f]; if (arr) for (const p of arr) hasNarrowerSet.add(p); } }
+
   // class disjointness (scheme side): skos:Collection is disjoint with skos:ConceptScheme
   if (collectionUris.has(schemeUri))
     push("error", "schemeIsCollection", "Scheme is also a collection",
@@ -1140,9 +1147,8 @@ function validate(model){
       `No skos:definition or skos:scopeNote.`, id);
 
     // 7 orphan (no hierarchical — plain or ISO 25964 — or associative relations, and not top)
-    const _HIER = ["broader"].concat(ISO_BROADER);
-    const hasNarrower = ids.some(x => _HIER.some(f => (C[x][f] || []).includes(id)));
-    const hasBroaderAny = _HIER.some(f => (c[f] || []).length > 0);
+    const hasNarrower = hasNarrowerSet.has(id);
+    const hasBroaderAny = _HIER_ALL.some(f => (c[f] || []).length > 0);
     const isOrphan = !hasBroaderAny && (c.related || []).length === 0 && !hasNarrower && !c.top;
     if (isOrphan) push("warning", "orphan", "Orphan concept",
       `No hierarchical or associative relations and not a top concept — it is disconnected.`, id);
