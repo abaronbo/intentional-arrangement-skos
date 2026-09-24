@@ -5789,6 +5789,8 @@ function renderGlossary(){
   // linked taxonomy model (for placing promoted terms under a chosen parent)
   const linkedM = cur.projectId ? (cur.projectId===currentPid?model:(projs[cur.projectId]&&projs[cur.projectId].model)) : null;
   const hasParents = !!(linkedM && linkedM.concepts && (linkedM.order||Object.keys(linkedM.concepts)).length);
+  const parentCount = hasParents ? (linkedM.order||Object.keys(linkedM.concepts)).length : 0;
+  const eagerParents = hasParents && parentCount<=400;   // fill per-row parent options up front for normal taxonomies; lazy only for very large ones
   // Build the (possibly large) parent-option list ONLY when a picker is actually opened,
   // and compute it at most once per render. A plain tab switch does zero option work.
   let _pOpts=null; const getParentOpts=()=> _pOpts!==null ? _pOpts : (_pOpts = hasParents ? glossParentOptions(linkedM) : "");
@@ -5797,10 +5799,10 @@ function renderGlossary(){
     const keep=promoteParentSel.value;
     promoteParentSel.innerHTML='<option value="">⌂ Top concepts</option>';
     promoteParentSel.disabled=!hasParents;
-    if(hasParents && keep){ promoteParentSel.insertAdjacentHTML("beforeend", getParentOpts()); promoteParentSel.value=keep; promoteParentSel.dataset.filled="1"; }
-    else promoteParentSel.dataset.filled="";
-    const fillShared=()=>{ if(promoteParentSel.dataset.filled) return; promoteParentSel.dataset.filled="1"; const v=promoteParentSel.value; promoteParentSel.insertAdjacentHTML("beforeend", getParentOpts()); promoteParentSel.value=v; };
-    promoteParentSel.onpointerdown=hasParents?fillShared:null; promoteParentSel.onfocus=hasParents?fillShared:null;
+    // Fill eagerly — a single select is cheap even for a large taxonomy, and lazy filling
+    // dropped the user's choice because native selects don't show options injected mid-open.
+    if(hasParents){ promoteParentSel.insertAdjacentHTML("beforeend", getParentOpts()); if(keep) promoteParentSel.value=keep; }
+    promoteParentSel.onpointerdown=null; promoteParentSel.onfocus=null;
   }
   if(!cur.terms.length){ list.innerHTML='<div class="gloss-empty">Empty. Paste terms above (one per line, a markdown list, or CSV) or choose a file, then <b>Add terms</b>.</div>'; }
   else for(const t of cur.terms){
@@ -5813,11 +5815,12 @@ function renderGlossary(){
       if(hasParents){
         psel=document.createElement("select"); psel.className="gloss-parent"; psel.title="Place this term under a parent concept (or keep it a top concept)";
         psel.innerHTML='<option value="">⌂ Top concept</option>';
-        // Populate the (potentially large) option list lazily on first interaction so
-        // a big taxonomy × many rows doesn't create 100k+ DOM nodes up front, and a
-        // plain switch to the Glossary tab never builds any options at all.
-        const fill=()=>{ if(psel.dataset.filled) return; psel.dataset.filled="1"; const v=psel.value; psel.insertAdjacentHTML("beforeend", getParentOpts()); psel.value=v; };
-        psel.addEventListener("pointerdown",fill); psel.addEventListener("focus",fill); psel.addEventListener("keydown",fill);
+        // Fill eagerly for normal taxonomies so the chosen parent always sticks; native
+        // selects don't render options injected mid-open, which silently dropped the choice.
+        // Only very large taxonomies (>400 concepts) keep the lazy fill to avoid 100k+ nodes.
+        if(eagerParents){ psel.insertAdjacentHTML("beforeend", getParentOpts()); }
+        else { const fill=()=>{ if(psel.dataset.filled) return; psel.dataset.filled="1"; const v=psel.value; psel.insertAdjacentHTML("beforeend", getParentOpts()); psel.value=v; };
+          psel.addEventListener("pointerdown",fill); psel.addEventListener("focus",fill); psel.addEventListener("keydown",fill); }
         row.appendChild(psel);
       }
       const pr=document.createElement("button"); pr.className="btn sm primary"; pr.textContent="Promote →"; pr.onclick=()=>promoteTerm(currentGid,t.id,psel?(psel.value||null):null); row.appendChild(pr);
@@ -5864,10 +5867,24 @@ function promoteInto(m, t, parentId){
   m.concepts[cid]=c; m.order.push(cid); t.conceptId=cid;
   return {cid, parent};
 }
-function promoteTerm(gid,tid,parentId){
+// Promotion must land in the taxonomy you have OPEN. If the candidate list is linked to a
+// different project, the concepts would silently go there and never appear in the open scheme
+// or its export — the classic "everything's promoted but the scheme is empty" trap. Stop and
+// offer to relink to the open taxonomy (OK) or abort (Cancel, e.g. to open the other one first).
+async function confirmPromoteTarget(b){
+  const projs=loadProjects();
+  const openName=(projs[currentPid]&&projs[currentPid].name)||"the taxonomy you have open";
+  const linkedName=(projs[b.projectId]&&projs[b.projectId].name)||"another taxonomy";
+  const ok=await askConfirm(`This candidate list is linked to “${linkedName}”, but you have “${openName}” open. Promoting adds concepts to the taxonomy you have OPEN — so they appear where you can see and export them.\n\nRelink this list to “${openName}” and promote here? (Cancel to leave it linked to “${linkedName}” — open that one first if you meant to build it.)`, "Promote into the open taxonomy?");
+  if(!ok) return false;
+  const g=loadGloss(); if(g[b.id]){ g[b.id].projectId=currentPid; g[b.id].updated=nowTs(); saveGloss(g); } b.projectId=currentPid;
+  return true;
+}
+async function promoteTerm(gid,tid,parentId){
   const g=loadGloss(), b=g[gid]; if(!b) return; const t=b.terms.find(x=>x.id===tid); if(!t||t.conceptId) return;
-  const projs=loadProjects(); const pid=b.projectId;
+  let projs=loadProjects(); let pid=b.projectId;
   if(!pid || !projs[pid]){ toast("Link this list to a taxonomy first (the Taxonomy dropdown, top-right)"); return; }
+  if(pid!==currentPid){ if(!await confirmPromoteTarget(b)) return; projs=loadProjects(); pid=b.projectId; }
   const isCur=(pid===currentPid); const m=isCur?model:projs[pid].model;
   const {parent}=promoteInto(m, t, parentId);
   if(isCur){ save(); renderTree(); afterChange(); }
@@ -5877,11 +5894,12 @@ function promoteTerm(gid,tid,parentId){
   toast(isCur?`Promoted “${t.term}”${under}`
              :`Promoted “${t.term}”${under} into “${projs[pid].name||'the linked taxonomy'}” — NOT the open taxonomy. Open it via ☰ → Projects, or relink this list.`);
 }
-function promoteAll(){
+async function promoteAll(){
   const g=loadGloss(), b=g[currentGid]; if(!b) return;
   const pend=b.terms.filter(t=>!t.conceptId); if(!pend.length){ toast("Nothing left to promote"); return; }
-  const projs=loadProjects(); const pid=b.projectId;
+  let projs=loadProjects(); let pid=b.projectId;
   if(!pid || !projs[pid]){ toast("Link this list to a taxonomy first"); return; }
+  if(pid!==currentPid){ if(!await confirmPromoteTarget(b)) return; projs=loadProjects(); pid=b.projectId; }
   const isCur=(pid===currentPid); const m=isCur?model:projs[pid].model;
   const parentId=$('#glossPromoteParent')?($('#glossPromoteParent').value||null):null;
   for(const t of pend) promoteInto(m, t, parentId);          // mutate all first
