@@ -131,7 +131,7 @@ function buildTriples(model, opts){
   // scheme
   add(iri(schemeUri), A, iri(NS.skos + "ConceptScheme"));
   if (opts.dc){
-    const s = iri(schemeUri), L = model.scheme.lang || model.defaultLang || "en";
+    const s = iri(schemeUri), L = model.defaultLang || model.scheme.lang || "en";
     const dct = k => iri(NS.dcterms + k);
     if (model.scheme.title) add(s, dct("title"), lit(model.scheme.title, L));
     if (model.scheme.description) add(s, dct("description"), lit(model.scheme.description, L));
@@ -155,18 +155,18 @@ function buildTriples(model, opts){
     if (model.prefix) add(s, iri(NS.vann + "preferredNamespacePrefix"), lit(model.prefix));
     if (model.base) add(s, iri(NS.vann + "preferredNamespaceUri"), lit(model.base));
     // dcterms:language — the vocabulary's default language as a BCP-47 tag (plain literal)
-    const lg = (model.scheme.lang || model.defaultLang || "").trim();
+    const lg = (model.defaultLang || model.scheme.lang || "").trim();
     if (lg) add(s, dct("language"), lit(lg));
     // Passthrough: scheme-level metadata we don't model (dcterms:license, subject, conformsTo, …)
     (model.scheme.extra || []).forEach(e => { if (e && e.p && e.o) add(s, iri(e.p), e.o.t === "iri" ? iri(e.o.v) : lit(e.o.v || "", e.o.lang || "", e.o.dt || "")); });
   }
 
-  // Default language for untagged annotation literals — the scheme's declared
-  // language, else the workspace default. Applied as a fallback on export so a
+  // Default language for untagged annotation literals — the workspace default
+  // language, else the scheme's declared language. Applied as a fallback on export so a
   // note that carries no tag (e.g. imported from an older untagged export) still
   // serializes as @<lang> instead of a bare literal (#71 follow-up). Never
   // overrides an existing tag, and does nothing when no default language is known.
-  const defLang = (model.scheme && model.scheme.lang) || model.defaultLang || "";
+  const defLang = model.defaultLang || (model.scheme && model.scheme.lang) || "";
   const ids = model.order && model.order.length ? model.order : Object.keys(model.concepts);
   for (const id of ids){
     const c = model.concepts[id]; if (!c) continue;
@@ -1694,7 +1694,7 @@ function triplesToModel(triples, prefixes){
     const cand = triples.filter(t => t.s.v === model.scheme.uri && t.o.t === "lit" && t.o.v &&
       t.p.t === "iri" && (t.p.v === NS.skos + "prefLabel" || t.p.v === NS.rdfs + "label"));
     const pick = cand.find(t => t.o.lang === model.defaultLang) || cand[0];
-    if (pick){ model.scheme.title = pick.o.v; if (pick.o.lang && !model.scheme.lang) model.scheme.lang = pick.o.lang; }
+    if (pick){ model.scheme.title = pick.o.v; if (pick.o.lang && !model.scheme.lang && !model.defaultLang) model.scheme.lang = model.defaultLang = pick.o.lang; }
   }
 
   // ---- collections: skos:Collection / skos:OrderedCollection ----
