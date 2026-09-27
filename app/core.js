@@ -1678,6 +1678,7 @@ function triplesToModel(triples, prefixes){
   // Default language from the file itself, so new edits aren't silently tagged with the
   // wrong language (dcterms:language if the scheme declares it, else the dominant
   // language among skos:prefLabel literals). BCP-47 tags per SKOS practice.
+  let langKnown = false;   // true once the file itself told us its language
   (() => {
     let lg = (model.scheme && model.scheme.language ? String(model.scheme.language).trim() : "");
     if (!lg){
@@ -1685,16 +1686,17 @@ function triplesToModel(triples, prefixes){
       let best = "", max = 0; for (const k in freq) if (freq[k] > max){ max = freq[k]; best = k; }
       lg = best;
     }
-    if (lg){ model.defaultLang = lg; if (model.scheme) model.scheme.lang = lg; }
+    if (lg){ model.defaultLang = lg; if (model.scheme) model.scheme.lang = lg; langKnown = true; }
   })();
 
   // A ConceptScheme titled with skos:prefLabel (or rdfs:label) rather than dcterms:title
   // still fills the title — prefer the default language, else any. (order-independent post-pass)
+  // When the file declared no language and its labels carry no tags, the title's tag is adopted.
   if (model.scheme.uri && !model.scheme.title){
     const cand = triples.filter(t => t.s.v === model.scheme.uri && t.o.t === "lit" && t.o.v &&
       t.p.t === "iri" && (t.p.v === NS.skos + "prefLabel" || t.p.v === NS.rdfs + "label"));
     const pick = cand.find(t => t.o.lang === model.defaultLang) || cand[0];
-    if (pick){ model.scheme.title = pick.o.v; if (pick.o.lang && !model.scheme.lang && !model.defaultLang) model.scheme.lang = model.defaultLang = pick.o.lang; }
+    if (pick){ model.scheme.title = pick.o.v; if (pick.o.lang && !langKnown){ model.scheme.lang = model.defaultLang = pick.o.lang; langKnown = true; } }
   }
 
   // ---- collections: skos:Collection / skos:OrderedCollection ----

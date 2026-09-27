@@ -2643,7 +2643,7 @@ function renderScheme(){
   for(const [key,lbl,type,hint] of SCHEME_FIELDS){
     const f=document.createElement("div"); f.className="fld";
     const l=document.createElement("label"); l.textContent=lbl;
-    if(key==="title"||key==="description"){ const lc=document.createElement("span"); lc.className="subtle";
+    if(key==="title"||key==="description"){ const lc=document.createElement("span");
       lc.style.cssText="margin-left:6px;font-size:11px;font-family:var(--mono)";
       lc.className="subtle schemeLangTag"; lc.textContent="@"+((model.defaultLang||model.scheme.lang||"en")); lc.title="Exported with the scheme's language tag";
       l.appendChild(lc); }
@@ -3921,9 +3921,9 @@ function renderSrcEditor(){ const ed=document.getElementById("srcEditor"); if(!e
     const pg=srcGrp(ed,"Page URL (foaf:page)"); const pin=srcInput("val","https://…"); pin.value=d.page[0]||"";
     pin.oninput=()=>{ d.page[0]=pin.value.trim(); save(); }; attachUriGuard(pin,v=>{ d.page[0]=v; save(); }); srcRow(pg).appendChild(pin);
     const cg=srcGrp(ed,"Comment (rdfs:comment, optional)"); const cm=document.createElement("textarea"); cm.className="val"; cm.rows=3; cm.value=(d.comment[0]&&d.comment[0].val)||"";
-    if(!d.comment[0]) d.comment[0]={lang:model.defaultLang,val:""};
-    const cl=mkLangSelect(d.comment[0], ()=>save());
-    cm.oninput=()=>{ d.comment[0].val=cm.value; save(); }; const cr=srcRow(cg); cr.append(cl,cm);
+    const cur=d.comment[0]||{lang:model.defaultLang,val:""};   // stored only once there is text
+    const cl=mkLangSelect(cur, ()=>{ if(d.comment[0]) save(); });
+    cm.oninput=()=>{ cur.val=cm.value; if(cm.value) d.comment[0]=cur; else d.comment=[]; save(); }; const cr=srcRow(cg); cr.append(cl,cm);
     const cited=Object.keys(model.concepts||{}).filter(cid=>(model.concepts[cid].source||[]).includes(d.id));
     const ft=document.createElement("div"); ft.style.cssText="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px";
     const cs=document.createElement("span"); cs.className="subtle"; cs.style.fontSize="12px"; cs.textContent=cited.length?("Cited by "+cited.length+" concept"+(cited.length===1?"":"s")+"."):"Not cited by any concept yet."; ft.appendChild(cs);
