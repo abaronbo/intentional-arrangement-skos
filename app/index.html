@@ -1737,7 +1737,9 @@ function purgeConcepts(del){
   for(const id of del) delete model.concepts[id];
   model.order=model.order.filter(x=>!del.has(x));
   for(const x of model.order){ const o=model.concepts[x];
-    o.broader=(o.broader||[]).filter(b=>!del.has(b)); o.related=(o.related||[]).filter(r=>!del.has(r)); for(const f of ISO_BROADER) o[f]=(o[f]||[]).filter(b=>!del.has(b)); }
+    o.broader=(o.broader||[]).filter(b=>!del.has(b)); o.related=(o.related||[]).filter(r=>!del.has(r)); for(const f of ISO_BROADER) o[f]=(o[f]||[]).filter(b=>!del.has(b));
+    if(o.isReplacedBy&&o.isReplacedBy.length) o.isReplacedBy=o.isReplacedBy.filter(r=>!del.has(r)); }
+  for(const k in (model.collections||{})){ const col=model.collections[k]; if(col&&col.members) col.members=col.members.filter(m=>!del.has(m)); }
   if(del.has(selected)) selected=null;
   unpromoteGlossRefs(del);
 }
@@ -1788,7 +1790,8 @@ function doRename(oldId, newId){
   model.order=model.order.map(x=>x===oldId?newId:x);
   for(const x of model.order){ const o=model.concepts[x];
     o.broader=(o.broader||[]).map(b=>b===oldId?newId:b); o.related=(o.related||[]).map(r=>r===oldId?newId:r);
-    ["broaderGeneric","broaderPartitive","broaderInstantial"].forEach(f=>{ if(o[f]&&o[f].length) o[f]=o[f].map(b=>b===oldId?newId:b); }); }
+    ["broaderGeneric","broaderPartitive","broaderInstantial"].forEach(f=>{ if(o[f]&&o[f].length) o[f]=o[f].map(b=>b===oldId?newId:b); });
+    if(o.isReplacedBy&&o.isReplacedBy.length) o.isReplacedBy=o.isReplacedBy.map(r=>r===oldId?newId:r); }
   (model.proposals||[]).forEach(p=>{ if(p.parentId===oldId)p.parentId=newId; if(p.approvedId===oldId)p.approvedId=newId; });
   for(const k in (model.collections||{})){ const col=model.collections[k]; if(col&&col.members) col.members=col.members.map(m=>m===oldId?newId:m); }
   if(model.graph&&model.graph.pos&&model.graph.pos["c:"+oldId]){ model.graph.pos["c:"+newId]=model.graph.pos["c:"+oldId]; delete model.graph.pos["c:"+oldId]; }
